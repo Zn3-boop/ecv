@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+venv/
+local-whisper-stt/venv/
+
+# Models
+local-whisper-stt/models/
+
+# Electron
+electron.zip
+*.exe
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Large binaries
+*.dll
+*.lib
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+.env
+

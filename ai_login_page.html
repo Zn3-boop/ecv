@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录页面 - AI生成</title>
+<style>
+  * {
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-container {
+    background: white;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 400px;
+  }
+  .login-container h2 {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #333;
+  }
+  .form-group {
+    margin-bottom: 20px;
+  }
+  .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #555;
+    font-size: 14px;
+  }
+  .form-group input[type="text"],
+  .form-group input[type="password"] {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+  }
+  .form-group input:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  .form-group input.error {
+    border-color: #e74c3c;
+  }
+  .remember-forgot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    font-size: 14px;
+  }
+  .remember-forgot label {
+    color: #666;
+    display: flex;
+    align-items: center;
+  }
+  .remember-forgot input[type="checkbox"] {
+    margin-right: 5px;
+  }
+  .remember-forgot a {
+    text-decoration: none;
+    color: #667eea;
+  }
+  .remember-forgot a:hover {
+    text-decoration: underline;
+  }
+  .login-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 5px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+  }
+  .login-btn:active {
+    transform: translateY(0);
+  }
+  .error-message {
+    color: #e74c3c;
+    font-size: 12px;
+    margin-top: 5px;
+    display: none;
+  }
+  .footer-links {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 14px;
+    color: #666;
+  }
+  @media (max-width: 600px) {
+    .login-container {
+      margin: 20px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="login-container">
+  <h2>用户登录</h2>
+  <form id="loginForm">
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" placeholder="请输入用户名" required>
+      <div class="error-message" id="usernameError">请输入用户名</div>
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" placeholder="请输入密码" required>
+      <div class="error-message" id="passwordError">请输入密码</div>
+    </div>
+    <div class="remember-forgot">
+      <label>
+        <input type="checkbox" id="remember"> 记住密码
+      </label>
+      <a href="#">忘记密码？</a>
+    </div>
+    <button type="submit" class="login-btn">登录</button>
+  </form>
+  <div class="footer-links">
+    还没有账号？<a href="#">立即注册</a>
+  </div>
+</div>
+<script>
+  document.getElementById('loginForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    var username = document.getElementById('username').value.trim();
+    var password = document.getElementById('password').value;
+    var usernameError = document.getElementById('usernameError');
+    var passwordError = document.getElementById('passwordError');
+    var isValid = true;
+    
+    // 清除之前的错误
+    document.getElementById('username').classList.remove('error');
+    document.getElementById('password').classList.remove('error');
+    usernameError.style.display = 'none';
+    passwordError.style.display = 'none';
+    
+    // 验证用户名
+    if (username === '') {
+      document.getElementById('username').classList.add('error');
+      usernameError.style.display = 'block';
+      isValid = false;
+    }
+    
+    // 验证密码
+    if (password === '') {
+      document.getElementById('password').classList.add('error');
+      passwordError.style.display = 'block';
+      isValid = false;
+    }
+    
+    if (isValid) {
+      // 模拟登录
+      const btn = document.querySelector('.login-btn');
+      btn.textContent = '登录中...';
+      btn.disabled = true;
+      
+      setTimeout(function() {
+        alert('登录成功！用户名: ' + username);
+        btn.textContent = '登录';
+        btn.disabled = false;
+      }, 1500);
+    }
+  });
+</script>
+</body>
+</html>
