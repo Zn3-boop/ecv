@@ -1,0 +1,20 @@
+{
+  "level": "critical",
+  "type": "memory",
+  "title": "Memory Spike",
+  "message": "Memory usage exceeded threshold",
+  "system_context": {
+    "memory": { "usagePercent": 95 },
+    "processes": {
+      "topProcesses": [
+        { "name": "chrome.exe", "cpu": 92 }
+      ]
+    },
+    "disk": {
+      "disks": [
+        { "usePercent": 91 }
+      ]
+    },
+    "temp_path": "D:\\ecv"
+  }
+}

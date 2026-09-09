@@ -1,0 +1,15 @@
+Loading Whisper model (base)...
+Whisper model loaded.
+INFO:     127.0.0.1:52887 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49696 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65499 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60131 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:60170 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:63398 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:49740 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:53502 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:59058 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:59082 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:59085 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:52961 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:62814 - "POST /v1/audio/transcriptions HTTP/1.1" 500 Internal Server Error
