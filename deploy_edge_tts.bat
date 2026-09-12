@@ -20,7 +20,7 @@ echo LLM_APP_NAME=AI Desktop Agent >> .env
 echo LLM_HTTP_REFERER=http://localhost:5178 >> .env
 echo. >> .env
 echo VOICE_PROVIDER=openai >> .env
-echo VOICE_API_KEY=sk-edge-tts-mock-key >> .env
+echo VOICE_API_KEY=%VOICE_API_KEY% >> .env
 echo VOICE_BASE_URL=http://localhost:5050/v1 >> .env
 echo VOICE_STT_MODEL=gpt-4o-mini-transcribe >> .env
 echo VOICE_TTS_MODEL=tts-1 >> .env

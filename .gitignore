@@ -29,5 +29,15 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
+# Secrets
 .env
+.env.local
+.env.production
+*.pem
+*.key
 
+# Data (may contain runtime provider keys)
+apps/server/app/data/providers.json
+
+# Root-level test scripts (one-off experiments, not part of the project)
+/test_*.py

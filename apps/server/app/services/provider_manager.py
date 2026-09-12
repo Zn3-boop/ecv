@@ -5,6 +5,7 @@ AI Provider 管理器 - 动态添加AI服务
 
 import os
 import json
+import re
 import httpx
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -12,6 +13,13 @@ from pathlib import Path
 
 
 PROVIDERS_CONFIG_FILE = Path(__file__).parent.parent / "data" / "providers.json"
+
+
+def _resolve_env_vars(value: str) -> str:
+    """替换字符串中的 ${VAR_NAME} 为对应环境变量值"""
+    if not value or not value.startswith("$"):
+        return value
+    return re.sub(r'\$\{(\w+)\}', lambda m: os.environ.get(m.group(1), ""), value)
 
 
 @dataclass
@@ -73,6 +81,8 @@ class ProviderManager:
                 with open(PROVIDERS_CONFIG_FILE, encoding='utf-8') as f:
                     data = json.load(f)
                     for p in data.get("providers", []):
+                        if "api_key" in p:
+                            p["api_key"] = _resolve_env_vars(p["api_key"])
                         self.providers[p["id"]] = ProviderConfig(**p)
             except Exception as e:
                 print(f"加载providers失败: {e}")
