@@ -23,20 +23,20 @@ class TestEndToEndPipeline:
     def test_simple_command_pipeline(self):
         """简单指令：意图识别 → 本地规则 → 无需 LLM"""
         cmd = "CPU多少"
-        intent = detect_intent(cmd)
+        intent = detect_intent(cmd)[0]
         assert intent == "system_monitor"
         assert intent != "llm_decompose"
 
     def test_complex_command_pipeline(self):
         """复杂指令：意图识别 → LLM 分解 → 工具编排"""
         cmd = "打开记事本写代码"
-        intent = detect_intent(cmd)
+        intent = detect_intent(cmd)[0]
         assert intent == "llm_decompose"
 
     def test_dangerous_command_pipeline(self):
         """高危指令：意图识别 → 工具编排 → 安全确认"""
         cmd = "关闭微信"
-        intent = detect_intent(cmd)
+        intent = detect_intent(cmd)[0]
         assert intent == "desktop_control"
 
         kill_tool = tool_registry._tools.get("process:kill")

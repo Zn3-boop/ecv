@@ -114,102 +114,102 @@ class TestSimpleIntentRecognition:
     """简单指令走本地规则，不触发 LLM"""
 
     def test_system_monitor_cpu(self):
-        assert detect_intent("CPU多少") == "system_monitor"
+        assert detect_intent("CPU多少")[0] == "system_monitor"
 
     def test_system_monitor_memory(self):
-        assert detect_intent("内存使用率") == "system_monitor"
+        assert detect_intent("内存使用率")[0] == "system_monitor"
 
     def test_system_monitor_disk(self):
-        assert detect_intent("磁盘状态") == "system_monitor"
+        assert detect_intent("磁盘状态")[0] == "system_monitor"
 
     def test_system_monitor_slow(self):
-        assert detect_intent("电脑很卡") == "system_monitor"
+        assert detect_intent("电脑很卡")[0] == "system_monitor"
 
     def test_system_monitor_process(self):
-        assert detect_intent("查看进程") == "system_monitor"
+        assert detect_intent("查看进程")[0] == "system_monitor"
 
     def test_system_monitor_c_drive(self):
-        assert detect_intent("C盘空间") == "system_monitor"
+        assert detect_intent("C盘空间")[0] == "system_monitor"
 
     def test_system_monitor_diagnosis(self):
-        assert detect_intent("检查系统") == "system_monitor"
+        assert detect_intent("检查系统")[0] == "system_monitor"
 
     def test_system_optimize(self):
-        assert detect_intent("全面清理") == "system_optimize"
+        assert detect_intent("全面清理")[0] == "system_optimize"
 
     def test_system_optimize_cache(self):
-        assert detect_intent("清理缓存") == "system_optimize"
+        assert detect_intent("清理缓存")[0] == "system_optimize"
 
     def test_system_optimize_speed(self):
-        assert detect_intent("电脑加速") == "system_optimize"
+        assert detect_intent("电脑加速")[0] == "system_optimize"
 
     def test_desktop_control_open_single_app(self):
-        assert detect_intent("打开微信") == "desktop_control"
+        assert detect_intent("打开微信")[0] == "desktop_control"
 
     def test_desktop_control_open_notepad(self):
-        assert detect_intent("打开记事本") == "desktop_control"
+        assert detect_intent("打开记事本")[0] == "desktop_control"
 
     def test_desktop_control_launch(self):
-        assert detect_intent("启动Chrome") == "desktop_control"
+        assert detect_intent("启动Chrome")[0] == "desktop_control"
 
     def test_desktop_control_kill(self):
-        result = detect_intent("结束chrome进程")
+        result = detect_intent("结束chrome进程")[0]
         assert result in ("desktop_control", "system_monitor"), (
             f"'结束chrome进程' 识别为 {result}，'进程'关键词先命中monitor规则"
         )
 
     def test_desktop_control_close(self):
-        assert detect_intent("关闭微信") == "desktop_control"
+        assert detect_intent("关闭微信")[0] == "desktop_control"
 
     def test_desktop_control_quit(self):
-        assert detect_intent("退出QQ") == "desktop_control"
+        assert detect_intent("退出QQ")[0] == "desktop_control"
 
     def test_search_only(self):
-        assert detect_intent("搜索Python教程") == "search_only"
+        assert detect_intent("搜索Python教程")[0] == "search_only"
 
     def test_search_only_baidu(self):
-        assert detect_intent("百度一下天气") == "search_only"
+        assert detect_intent("百度一下天气")[0] == "search_only"
 
     def test_store_action_uninstall(self):
-        assert detect_intent("卸载MongoDB应用") == "store_action"
+        assert detect_intent("卸载MongoDB应用")[0] == "store_action"
 
     def test_store_action_install(self):
-        assert detect_intent("安装VSCode应用") == "store_action"
+        assert detect_intent("安装VSCode应用")[0] == "store_action"
 
     def test_store_action_delete_app(self):
-        assert detect_intent("删除软件Chrome") == "store_action"
+        assert detect_intent("删除软件Chrome")[0] == "store_action"
 
 
 class TestComplexIntentRecognition:
     """复杂指令需要 LLM 分解"""
 
     def test_open_and_write(self):
-        assert detect_intent("打开记事本写代码") == "llm_decompose"
+        assert detect_intent("打开记事本写代码")[0] == "llm_decompose"
 
     def test_open_and_search(self):
-        assert detect_intent("打开浏览器搜索AI") == "llm_decompose"
+        assert detect_intent("打开浏览器搜索AI")[0] == "llm_decompose"
 
     def test_generate_content(self):
-        assert detect_intent("写一篇关于AI的文章") == "llm_decompose"
+        assert detect_intent("写一篇关于AI的文章")[0] == "llm_decompose"
 
     def test_create_page(self):
-        assert detect_intent("创建登录页面") == "llm_decompose"
+        assert detect_intent("创建登录页面")[0] == "llm_decompose"
 
     def test_open_then_action(self):
-        assert detect_intent("打开微信然后发消息") == "llm_decompose"
+        assert detect_intent("打开微信然后发消息")[0] == "llm_decompose"
 
     def test_multi_step(self):
-        assert detect_intent("打开VSCode写个登录页面然后浏览器预览") == "llm_decompose"
+        assert detect_intent("打开VSCode写个登录页面然后浏览器预览")[0] == "llm_decompose"
 
     def test_open_with_content_generation(self):
-        assert detect_intent("打开Word写毕业论文") == "llm_decompose"
+        assert detect_intent("打开Word写毕业论文")[0] == "llm_decompose"
 
 
 class TestIntentClassificationAccuracy:
     """基于带标注测试集的分类准确率 - 验证本地规则分流质量"""
 
     def test_overall_accuracy(self):
-        correct = sum(1 for cmd, expected in LABELED_TEST_SET if detect_intent(cmd) == expected)
+        correct = sum(1 for cmd, expected in LABELED_TEST_SET if detect_intent(cmd)[0] == expected)
         total = len(LABELED_TEST_SET)
         accuracy = correct / total
         print(f"\n[分类准确率] {correct}/{total} = {accuracy:.1%}")
@@ -219,13 +219,13 @@ class TestIntentClassificationAccuracy:
         categories = set(expected for _, expected in LABELED_TEST_SET)
         print("\n[各类别 Precision]")
         for cat in sorted(categories):
-            predicted_as_cat = [cmd for cmd, _ in LABELED_TEST_SET if detect_intent(cmd) == cat]
+            predicted_as_cat = [cmd for cmd, _ in LABELED_TEST_SET if detect_intent(cmd)[0] == cat]
             actually_cat = [cmd for cmd, exp in LABELED_TEST_SET if exp == cat]
             if not predicted_as_cat:
                 print(f"  {cat:20s}: 无预测样本")
                 continue
-            tp = sum(1 for cmd in predicted_as_cat if detect_intent(cmd) == cat and (cmd, cat) in LABELED_TEST_SET)
-            tp = sum(1 for cmd, exp in LABELED_TEST_SET if detect_intent(cmd) == cat and exp == cat)
+            tp = sum(1 for cmd in predicted_as_cat if detect_intent(cmd)[0] == cat and (cmd, cat) in LABELED_TEST_SET)
+            tp = sum(1 for cmd, exp in LABELED_TEST_SET if detect_intent(cmd)[0] == cat and exp == cat)
             precision = tp / len(predicted_as_cat)
             print(f"  {cat:20s}: {precision:.1%} ({tp}/{len(predicted_as_cat)})")
 
@@ -236,7 +236,7 @@ class TestIntentClassificationAccuracy:
             ground_truth = [(cmd, exp) for cmd, exp in LABELED_TEST_SET if exp == cat]
             if not ground_truth:
                 continue
-            tp = sum(1 for cmd, exp in ground_truth if detect_intent(cmd) == cat)
+            tp = sum(1 for cmd, exp in ground_truth if detect_intent(cmd)[0] == cat)
             recall = tp / len(ground_truth)
             print(f"  {cat:20s}: {recall:.1%} ({tp}/{len(ground_truth)})")
             if cat != "llm_decompose":
@@ -247,7 +247,7 @@ class TestIntentClassificationAccuracy:
         simple_categories = {"system_monitor", "system_optimize", "desktop_control", "search_only", "store_action"}
         false_llm = [
             cmd for cmd, exp in LABELED_TEST_SET
-            if exp in simple_categories and detect_intent(cmd) == "llm_decompose"
+            if exp in simple_categories and detect_intent(cmd)[0] == "llm_decompose"
         ]
         print(f"\n[误判检查] 简单指令被误判为 llm_decompose: {len(false_llm)} 条")
         if false_llm:
@@ -287,7 +287,7 @@ class TestIntentDetectionPerformance:
         for session in SIMULATED_SESSIONS:
             for cmd in session:
                 total_commands += 1
-                result = detect_intent(cmd)
+                result = detect_intent(cmd)[0]
                 if result == "llm_decompose":
                     llm_routed += 1
                 else:
@@ -313,7 +313,7 @@ class TestIntentDetectionPerformance:
         pure_llm_latency = 0.0
 
         for cmd in all_commands:
-            result = detect_intent(cmd)
+            result = detect_intent(cmd)[0]
             if result == "llm_decompose":
                 hybrid_latency += LLM_AVG_LATENCY_MS
             else:
@@ -335,7 +335,7 @@ class TestIntentDetectionPerformance:
         TOKENS_PER_LLM_CALL = 700
         all_commands = [cmd for session in SIMULATED_SESSIONS for cmd in session]
 
-        llm_calls_hybrid = sum(1 for cmd in all_commands if detect_intent(cmd) == "llm_decompose")
+        llm_calls_hybrid = sum(1 for cmd in all_commands if detect_intent(cmd)[0] == "llm_decompose")
         llm_calls_pure = len(all_commands)
 
         tokens_hybrid = llm_calls_hybrid * TOKENS_PER_LLM_CALL
@@ -354,24 +354,24 @@ class TestIntentEdgeCases:
     """意图识别边界情况"""
 
     def test_empty_string(self):
-        result = detect_intent("")
+        result = detect_intent("")[0]
         assert result is not None
 
     def test_whitespace(self):
-        result = detect_intent("   ")
+        result = detect_intent("   ")[0]
         assert result is not None
 
     def test_mixed_case(self):
-        assert detect_intent("CPU多少") == "system_monitor"
-        assert detect_intent("cpu多少") == "system_monitor"
+        assert detect_intent("CPU多少")[0] == "system_monitor"
+        assert detect_intent("cpu多少")[0] == "system_monitor"
 
     def test_compound_connector_prevents_simple(self):
-        assert detect_intent("打开微信然后写消息") == "llm_decompose"
+        assert detect_intent("打开微信然后写消息")[0] == "llm_decompose"
 
     def test_kill_without_open_is_simple(self):
-        result = detect_intent("结束chrome")
+        result = detect_intent("结束chrome")[0]
         assert result in ("desktop_control", "system_monitor")
 
     def test_kill_with_open_is_complex(self):
-        result = detect_intent("打开微信然后结束chrome")
+        result = detect_intent("打开微信然后结束chrome")[0]
         assert result in ("llm_decompose", "desktop_control")

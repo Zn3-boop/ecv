@@ -33,6 +33,15 @@ async def lifespan(app: FastAPI):
         print("Storage initialized successfully")
     except Exception as e:
         print(f"Warning: Storage init failed: {e}")
+    try:
+        from app.services.observability.langfuse_client import init_langfuse
+        lf_result = init_langfuse()
+        if lf_result is not None:
+            print("LangFuse initialized successfully (trace will be reported)")
+        else:
+            print("LangFuse disabled (env vars missing or init failed)")
+    except Exception as e:
+        print(f"Warning: LangFuse init failed (non-fatal): {e}")
     yield
     # 关闭时执行（如需清理资源）
 

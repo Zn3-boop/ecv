@@ -379,7 +379,7 @@ async def handle_user_command(cmd: UserCommand):
     auto_exec = cmd.auto_execute
     
     # ===== 第零层：本地快路径（简单单动作直接执行，无需 LLM）=====
-    intent = detect_intent(text)
+    intent, _ = detect_intent(text)
     if intent != 'llm_decompose':
         simple_commands = _build_simple_commands(intent, text)
         if simple_commands:

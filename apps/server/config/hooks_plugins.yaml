@@ -1,0 +1,90 @@
+# RAG + Web 并行检索 Hook 插件配置
+# 所有组件均可通过此文件配置，环境变量优先级更高
+# 环境变量覆盖: HOOK_REWRITER, HOOK_FUSION_STRATEGY, HOOK_RAG_WEIGHT, HOOK_WEB_WEIGHT 等
+
+# ========== 查询改写 (B1-B4) ==========
+# 可选: rule (纯规则, 零LLM) / llm (大模型改写, 降级到rule)
+rewriter:
+  type: rule
+  # type: llm  # 取消注释使用LLM改写
+
+# ========== 意图识别 (B5) ==========
+# 可选: rule (关键词匹配) / llm (大模型识别, 降级到rule)
+intent_recognizer:
+  type: rule
+  # type: llm
+
+# ========== 意图澄清 (B6) ==========
+# 可选: rule (6场景规则) / llm (大模型判断, 降级到rule)
+clarifier:
+  type: rule
+  # type: llm
+
+# ========== 检索器 (可配多个，并行执行) ==========
+retrievers:
+  - type: rag          # 本地向量库 (RAGService)
+    top_k: 5
+    enable_rerank: false
+  - type: duckduckgo   # DuckDuckGo即时回答 (免费, 无需API Key)
+  # - type: tavily     # Tavily搜索 (专为AI Agent设计, 需TAVILY_API_KEY)
+  #   search_depth: basic
+  # - type: serpapi    # SerpAPI Google搜索 (需SERPAPI_KEY)
+  # - type: code_search  # 项目代码语义搜索
+
+# ========== 超时控制 ==========
+timeouts:
+  rag: 5.0    # 向量检索超时(秒)
+  web: 8.0    # 网络搜索超时(秒)
+
+# ========== 结果融合 ==========
+# 可选: simple_concat / weighted / rerank / source_priority
+fusion:
+  type: weighted
+  rag_weight: 0.7     # 内部知识库权重 (权威业务文档)
+  web_weight: 0.3     # 互联网权重 (补充信息)
+
+# ========== 去重与过滤 (串联执行) ==========
+dedup_filters:
+  - type: simhash          # SimHash文本相似度去重
+    similarity_threshold: 0.85
+  - type: rule_filter      # 规则过滤 (广告/导航/404/太短)
+  # - type: recency         # 时效性过滤 (过期降权)
+  #   max_age_days: 365
+  #   decay_factor: 0.5
+
+# ========== Prompt构造 ==========
+# 可选: default / concise / structured
+prompt_builder:
+  type: default
+  # type: structured  # 带证据ID+矛盾提示的结构化Prompt
+
+# ========== 验证门 (H5 Validation Gate) ==========
+validators:
+  - type: min_result       # 至少N条有效结果
+    min_results: 1
+  - type: score_threshold  # 过滤低分结果
+    min_score: 0.2
+
+# ========== 缓存 (B8) ==========
+cache:
+  enabled: true
+  max_size: 1000
+  ttl_seconds: 3600
+
+# ========== 上下文管理 (A9) ==========
+context:
+  max_recent_observations: 5
+  max_context_chars: 8000
+
+# ========== 工具安全 (H12/A7) ==========
+tool_guard:
+  enabled: true
+  # extra_dangerous_patterns: []
+  # extra_high_risk_tools: []
+
+# ========== 执行协议 (H3) ==========
+# 可选: feature / bugfix / refactor / investigation
+# execution_protocol: bugfix
+
+# ========== 全局 ==========
+max_context_chars: 4000    # 融合后上下文最大字符数

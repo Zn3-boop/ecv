@@ -1,0 +1,50 @@
+approved_exe_whitelist:
+  - WeChat.exe
+  - QQ.exe
+  - chrome.exe
+  - msedge.exe
+  - Code.exe
+  - WINWORD.EXE
+  - EXCEL.EXE
+  - POWERPNT.EXE
+  - notepad.exe
+  - calc.exe
+  - mspaint.exe
+  - Photoshop.exe
+  - BaiduNetdisk.exe
+  - DingTalk.exe
+  - Feishu.exe
+  - wps.exe
+  - Cursor.exe
+  - idea64.exe
+  - pycharm64.exe
+  - firefox.exe
+  - Telegram.exe
+  - Discord.exe
+  - steam.exe
+  - Spotify.exe
+  - ms-teams.exe
+  - OUTLOOK.EXE
+  - notepad++.exe
+  - sublime_text.exe
+  - git.exe
+
+high_risk_extensions:
+  - ".bat"
+  - ".cmd"
+  - ".sh"
+  - ".ps1"
+  - ".vbs"
+  - ".wsf"
+  - ".scr"
+  - ".com"
+
+system_dirs:
+  - windows
+  - system32
+  - syswow64
+  - system
+
+garbage_ratio_threshold: 0.3
+max_correction_loop: 2
+llm_rewrite_timeout: 10.0

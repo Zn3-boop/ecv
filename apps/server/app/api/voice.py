@@ -847,7 +847,7 @@ async def handle_voice_command(payload: VoiceCommandRequest):
         normalized_text = normalize_voice_text(payload.transcript)
         if not normalized_text:
             normalized_text = '请给出诊断建议。'
-        intent = detect_intent(normalized_text)
+        intent, _ = detect_intent(normalized_text)
 
         merged_voice_context = {'source': 'desktop-text-simulated', 'locale': 'zh-CN', 'device': 'desktop'}
         if payload.voice_context:

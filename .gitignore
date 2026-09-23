@@ -33,11 +33,61 @@ Thumbs.db
 .env
 .env.local
 .env.production
+.env.staging
 *.pem
 *.key
+*.p12
+*.jks
+credentials.json
+service-account*.json
 
 # Data (may contain runtime provider keys)
 apps/server/app/data/providers.json
 
+# LangGraph dev runtime data
+.langgraph_api/
+
+# Test output logs
+_test_output.log
+api_err.log
+api_out.log
+vite_err.log
+vite_out.log
+
 # Root-level test scripts (one-off experiments, not part of the project)
 /test_*.py
+patch.py
+patch2.py
+temp_repl.txt
+
+# Runtime data & logs
+*.log
+!apps/server/requirements.txt
+apps/server/data/audit.db
+apps/server/data/checkpoints/
+apps/server/logs/
+apps/server/memory_store/
+apps/server/temp_context.txt
+apps/server/test_ollama_req.json
+memory_store/
+
+# Test memory directories
+test_mem_gov*/
+apps/server/test_mem_gov*/
+apps/server/test_mem_sig*/
+
+# One-off test scripts in server root
+apps/server/_*.py
+apps/server/test_e2e_chain.py
+apps/server/run_complex_task.py
+apps/server/verify_langfuse_jp.py
+apps/server/demo.py
+
+# jev_lite (external tool)
+jev_lite/
+
+# Trae IDE
+.trae/
+
+# Pytest cache
+.pytest_cache/

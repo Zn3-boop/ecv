@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 CONTENT_GENERATE_KEYWORDS = [
     '创建', '生成', '编写', '制作', '设计', '撰写',
@@ -80,8 +81,17 @@ def _is_single_app_only(text: str) -> bool:
                     '结束', '杀', '清理', '优化', '加速', '移动', '复制', '重命名']
     return not any(w in after_open for w in action_words)
 
-def detect_intent(text: str) -> str:
+def detect_intent(text: str) -> tuple[str, float]:
     simple = _is_simple_single_action(text)
     if simple:
-        return simple
-    return 'llm_decompose'
+        return simple, 0.95
+    return 'llm_decompose', 0.5
+
+
+def extract_entities(text: str, intent: str) -> dict[str, Any]:
+    """从用户输入抽取结构化实体参数字典（供子 Agent 入参使用）。
+
+    本地规则快路径下不做过深实体解析，返回最小结构化信息；
+    复杂指令由 LLM 慢路径（route_via_llm）做深度抽取。
+    """
+    return {"query": text, "intent": intent}

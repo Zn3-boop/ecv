@@ -1,0 +1,572 @@
+tool_list:
+  - name: launch_app
+    description: "启动桌面应用，传入exe路径"
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+    alwaysLoad: true
+    defer_loading: false
+
+  - name: query_process
+    description: "查询系统进程列表"
+    input_schema:
+      type: object
+    alwaysLoad: true
+    defer_loading: false
+
+  - name: kill_process
+    description: "结束指定进程"
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+    alwaysLoad: true
+    defer_loading: false
+
+  - name: "system:info"
+    description: "获取系统概览信息，CPU、内存、磁盘等"
+    input_schema:
+      type: object
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "process:top"
+    description: "获取高占用进程列表"
+    input_schema:
+      type: object
+      properties:
+        max:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "disk:list"
+    description: "获取磁盘信息列表"
+    input_schema:
+      type: object
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "disk:cleanup"
+    description: "执行磁盘清理"
+    input_schema:
+      type: object
+      properties:
+        max:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "temp:scan"
+    description: "扫描临时文件和垃圾文件"
+    input_schema:
+      type: object
+      properties:
+        max:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "browser:search"
+    description: "浏览器搜索关键词"
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "network:request"
+    description: "发送HTTP网络请求"
+    input_schema:
+      type: object
+      properties:
+        url:
+          type: string
+        method:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "store:search"
+    description: "搜索应用商店中的应用"
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "store:install"
+    description: "安装应用商店中的应用"
+    input_schema:
+      type: object
+      properties:
+        package_id:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "store:uninstall"
+    description: "卸载应用"
+    input_schema:
+      type: object
+      properties:
+        package_id:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "store:list"
+    description: "列出已安装应用"
+    input_schema:
+      type: object
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "content:generate"
+    description: "生成文章、代码、文档等内容"
+    input_schema:
+      type: object
+      properties:
+        task:
+          type: string
+        content_type:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "ide:launch"
+    description: "通过IDE创建项目"
+    input_schema:
+      type: object
+      properties:
+        ide:
+          type: string
+        project_name:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: edit_registry
+    description: "编辑Windows注册表，高危操作"
+    input_schema:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: export_system_log
+    description: "导出系统完整日志，大输出"
+    input_schema:
+      type: object
+      properties:
+        output_path:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: run_script
+    description: "运行脚本文件，高危操作"
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:screenshot"
+    description: "截取屏幕截图，支持全屏或指定区域"
+    input_schema:
+      type: object
+      properties:
+        region:
+          type: string
+        output_path:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:ocr"
+    description: "OCR文字识别，从图片中提取文字"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        lang:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:resize"
+    description: "调整图片尺寸大小"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:crop"
+    description: "裁剪图片指定区域"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        box:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:convert"
+    description: "图片格式转换(png/jpg/webp/bmp/gif)"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        target_format:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:filter"
+    description: "图片滤镜处理(灰度/模糊/锐化/边缘检测/浮雕)"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        filter_type:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:analyze"
+    description: "图像分析(直方图/主色调/尺寸信息)"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        analyze_type:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:read_qr"
+    description: "读取图片中的二维码"
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "image:compare"
+    description: "对比两张图片的相似度"
+    input_schema:
+      type: object
+      properties:
+        image_path_a:
+          type: string
+        image_path_b:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:calculate"
+    description: "数学表达式计算(支持三角函数/统计/对数)"
+    input_schema:
+      type: object
+      properties:
+        expression:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:encrypt"
+    description: "文本加密(base64/AES/SHA256)"
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        method:
+          type: string
+        key:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:decrypt"
+    description: "文本解密(base64/AES)"
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        method:
+          type: string
+        key:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:compress"
+    description: "文件或目录压缩(zip/tar.gz)"
+    input_schema:
+      type: object
+      properties:
+        source_path:
+          type: string
+        format:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:decompress"
+    description: "解压缩文件(zip/tar.gz)"
+    input_schema:
+      type: object
+      properties:
+        archive_path:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:convert_data"
+    description: "数据格式转换(JSON↔CSV)"
+    input_schema:
+      type: object
+      properties:
+        input_path:
+          type: string
+        input_format:
+          type: string
+        output_format:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:generate"
+    description: "随机生成(UUID/密码/Token/数字)"
+    input_schema:
+      type: object
+      properties:
+        gen_type:
+          type: string
+        count:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:hash"
+    description: "计算哈希摘要(SHA256/MD5/SHA1)"
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        algorithm:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "algo:plot"
+    description: "数据可视化绘图(柱状图/折线图/散点图/饼图)"
+    input_schema:
+      type: object
+      properties:
+        data_path:
+          type: string
+        chart_type:
+          type: string
+        title:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "rag:index"
+    description: "RAG离线建库：索引文档到向量库+BM25(支持text/code/table/scan四类切分)"
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        file_path:
+          type: string
+        doc_id:
+          type: string
+        source_type:
+          type: string
+        acl_tags:
+          type: array
+          items:
+            type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "rag:query"
+    description: "RAG在线检索：向量+BM25混搭→RRF重排→鉴权前置→证据回溯"
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+        user_acl:
+          type: array
+          items:
+            type: string
+        rewrite_queries:
+          type: array
+          items:
+            type: string
+        top_k:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "rag:delete"
+    description: "RAG删除文档(向量库+BM25同步删除)"
+    input_schema:
+      type: object
+      properties:
+        doc_id:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "rag:stats"
+    description: "RAG知识库统计信息"
+    input_schema:
+      type: object
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "evolve:feedback"
+    description: "自进化Agent:从任务反馈/用户纠错学习(E1经验驱动,E2四类闭环)"
+    input_schema:
+      type: object
+      properties:
+        task_id:
+          type: string
+        task_result:
+          type: object
+        user_correction:
+          type: string
+        evaluation_score:
+          type: number
+        level:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "evolve:evaluate"
+    description: "自进化Agent:评估进化结果(E4评估约束)"
+    input_schema:
+      type: object
+      properties:
+        record_id:
+          type: string
+        score:
+          type: number
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "evolve:rollback"
+    description: "自进化Agent:回滚到指定版本(E4回滚约束)"
+    input_schema:
+      type: object
+      properties:
+        target_version:
+          type: integer
+        record_id:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "evolve:share"
+    description: "自进化Agent:共享技能到群体(E2③群体智能闭环)"
+    input_schema:
+      type: object
+      properties:
+        skill_id:
+          type: string
+        group_id:
+          type: string
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "evolve:stats"
+    description: "自进化Agent:统计信息"
+    input_schema:
+      type: object
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "code:search"
+    description: "智能代码搜索:策略路由自动分发Glob/Grep/Semantic(S1-S7)"
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+        root_dir:
+          type: string
+        search_type:
+          type: string
+        file_glob:
+          type: string
+        max_results:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "code:glob"
+    description: "代码Glob文件名模式匹配(S5 GlobTool)"
+    input_schema:
+      type: object
+      properties:
+        pattern:
+          type: string
+        root_dir:
+          type: string
+        max_results:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true
+
+  - name: "code:grep"
+    description: "代码Grep正则内容检索(S2 GrepTool)"
+    input_schema:
+      type: object
+      properties:
+        pattern:
+          type: string
+        root_dir:
+          type: string
+        file_glob:
+          type: string
+        max_results:
+          type: integer
+    alwaysLoad: false
+    defer_loading: true

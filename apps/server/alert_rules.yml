@@ -1,0 +1,34 @@
+groups:
+  - name: desktop_agent_alerts
+    rules:
+      - alert: DesktopAgentCorrectionExhaust
+        expr: increase(graph_correction_exhaust_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "自校正循环耗尽告警"
+          description: |
+            5分钟内发生自校正循环耗尽，count={{ $value }}。
+            请查询未处理pollution信号：GET /desktop/governor/signals?signal_type=pollution&status=open
+
+      - alert: DesktopAgentCorrectionTimeout
+        expr: increase(graph_correction_timeout_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "LLM自校正重写超时告警"
+          description: "5分钟内LLM重写发生超时，请检查LLM服务可用性"
+
+      - alert: DesktopAgentSecurityBlock
+        expr: increase(graph_security_blocked_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: desktop-agent
+        annotations:
+          summary: "安全拦截事件告警"
+          description: "检测到安全拦截事件，请排查注入或高危脚本攻击"

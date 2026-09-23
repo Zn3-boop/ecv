@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import os
+import re
+import struct
 import time
 import winreg
 from typing import Any
@@ -10,6 +14,13 @@ import aiohttp
 
 from app.services.software_index import find_software
 from app.services.tool_registry import tool_registry
+
+logger = logging.getLogger(__name__)
+
+# ===== P0-2 隐性加固阈值 =====
+_MAX_STRING_LEN = 2000   # 单字符串参数最大长度（字符）
+_MAX_ARRAY_LEN = 100     # 数组参数最大长度（项数）
+_MAX_RESULT_ITEMS = 50   # 单次结果最多返回条数（超出截断）
 
 ELECTRON_TOOL_URL = "http://127.0.0.1:9000/execute"
 
@@ -157,21 +168,472 @@ def _resolve_launch_path(args: dict[str, Any]) -> dict[str, Any]:
 
 def _record_executor_failure(tool: str, params: dict[str, Any], reason: str):
     """记录执行失败到日志（供排查）"""
-    # 打印到后端日志，Electron 控制台也能看到
     print(f"[Executor] 执行失败记录 [{tool}]: {reason} | params={json.dumps(params, ensure_ascii=False)}")
+
+
+_SHELL_METACHARS = ";&|$`<>"
+_SHELL_METACHAR_NAMES = {
+    ";": "分号(;)",
+    "&": "与号(&)",
+    "|": "管道(|)",
+    "$": "美元符($)",
+    "`": "反引号(`)",
+    "<": "小于号(<)",
+    ">": "大于号(>)",
+}
+
+
+def _guard_pre_check(tool: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    P0: 工具执行前安全预检。
+    拦截路径/查询等字符串参数中的 shell 元字符，防止命令注入；
+    拦截路径型参数的 `..` 逃逸，防止路径穿越/越界文件写入。
+    返回 None 表示放行；返回 dict 表示拦截（error_type=security，禁止重试）。
+    """
+    for key, value in params.items():
+        if not isinstance(value, str):
+            continue
+        for ch in _SHELL_METACHARS:
+            if ch in value:
+                name = _SHELL_METACHAR_NAMES.get(ch, ch)
+                return {
+                    "error": f"参数 {key} 含shell元字符({name})，已拦截，禁止重试",
+                    "error_type": "security",
+                    "blocked": True,
+                    "suggestion": f"参数 {key} 不允许包含 shell 元字符，请去掉 {name}",
+                }
+        # H10 类#2: 路径穿越 / 越界文件写入
+        _k = (key or "").lower()
+        if _k in ("out", "src", "image", "script") or any(h in _k for h in ("path", "file", "dir", "folder")):
+            if ".." in value and ("..\\" in value or "../" in value):
+                return {
+                    "error": f"参数 {key} 含路径穿越(..)，已拦截，越界写入风险",
+                    "error_type": "security",
+                    "blocked": True,
+                    "suggestion": f"参数 {key} 不允许包含 .. 逃逸路径，请使用工作区内绝对路径",
+                }
+    return None
+
+
+def _validate_tool_params(name: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    P0: 工具执行前参数校验层
+    基于 ToolDefinition.parameters JSON Schema 校验:
+    - required 字段缺失
+    - 类型不匹配
+    - enum 值非法
+
+    返回 None 表示校验通过，返回 dict 表示校验失败（结构化错误信息）。
+    """
+    tool_def = tool_registry.get_tool(name)
+    if not tool_def or not tool_def.parameters:
+        return None
+
+    schema = tool_def.parameters
+    properties = schema.get("properties", {})
+    required_fields = schema.get("required", [])
+
+    errors: list[dict[str, str]] = []
+
+    for field_name in required_fields:
+        if field_name not in args or args[field_name] is None or args[field_name] == "":
+            prop_info = properties.get(field_name, {})
+            errors.append({
+                "field": field_name,
+                "error": "missing_required",
+                "expected": prop_info.get("type", "any"),
+                "description": prop_info.get("description", ""),
+                "hint": f"请提供 {field_name} 参数 ({prop_info.get('description', '')})",
+            })
+
+    for key, value in args.items():
+        if key not in properties:
+            continue
+        prop_info = properties[key]
+        expected_type = prop_info.get("type", "")
+
+        if expected_type == "integer" and not isinstance(value, int):
+            if isinstance(value, str):
+                try:
+                    args[key] = int(value)
+                except ValueError:
+                    errors.append({
+                        "field": key,
+                        "error": "type_mismatch",
+                        "expected": "integer",
+                        "got": type(value).__name__,
+                        "hint": f"参数 {key} 应为整数，当前值: {value!r}",
+                    })
+            elif isinstance(value, float):
+                args[key] = int(value)
+        elif expected_type == "string" and not isinstance(value, str):
+            args[key] = str(value)
+        elif expected_type == "number" and not isinstance(value, (int, float)):
+            if isinstance(value, str):
+                try:
+                    args[key] = float(value)
+                except ValueError:
+                    errors.append({
+                        "field": key,
+                        "error": "type_mismatch",
+                        "expected": "number",
+                        "got": type(value).__name__,
+                        "hint": f"参数 {key} 应为数字，当前值: {value!r}",
+                    })
+
+        if "enum" in prop_info and value not in prop_info["enum"]:
+            errors.append({
+                "field": key,
+                "error": "invalid_enum",
+                "expected": f"one of {prop_info['enum']}",
+                "got": str(value),
+                "hint": f"参数 {key} 只能取值: {prop_info['enum']}",
+            })
+
+        # ===== P0-2: 字符串/数组长度上限（防 LLM 生成超长参数爆炸文件系统/上下文）=====
+        if isinstance(value, str) and len(value) > _MAX_STRING_LEN:
+            errors.append({
+                "field": key,
+                "error": "string_too_long",
+                "expected": f"<= {_MAX_STRING_LEN} chars",
+                "got": len(value),
+                "hint": f"参数 {key} 超长({len(value)}字符)，最大{_MAX_STRING_LEN}",
+            })
+        if isinstance(value, list) and len(value) > _MAX_ARRAY_LEN:
+            errors.append({
+                "field": key,
+                "error": "array_too_long",
+                "expected": f"<= {_MAX_ARRAY_LEN} items",
+                "got": len(value),
+                "hint": f"参数 {key} 数组超长({len(value)}项)，最大{_MAX_ARRAY_LEN}",
+            })
+
+        # ===== P0-2: glob / regex 语法预检（语法类参数不能无脑类型转换，非法直接拒绝）=====
+        fmt = prop_info.get("format", "")
+        if fmt == "regex" and isinstance(value, str):
+            try:
+                re.compile(value)
+            except re.error:
+                errors.append({
+                    "field": key,
+                    "error": "invalid_syntax",
+                    "expected": "valid regex",
+                    "got": value,
+                    "hint": f"参数 {key} 不是合法正则表达式: {value}",
+                })
+        elif fmt == "glob" and isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("**/*") or stripped in ("**", "*"):
+                errors.append({
+                    "field": key,
+                    "error": "invalid_syntax",
+                    "expected": "bounded glob",
+                    "got": value,
+                    "hint": f"参数 {key} 禁止全量扫描通配符: {value}",
+                })
+
+    if errors:
+        first_err = errors[0]
+        return _make_structured_result(
+            status="error",
+            summary=f"参数校验失败: {first_err['hint']}",
+            data=None,
+            hit_count=0,
+            missing_info=[e["field"] for e in errors],
+            confidence=0.0,
+            error_type="schema",
+            suggestion="; ".join(e["hint"] for e in errors[:3]),
+        )
+
+    return None
+
+
+def _make_structured_result(
+    status: str,
+    summary: str,
+    data: Any = None,
+    hit_count: int = 0,
+    missing_info: list[str] | None = None,
+    confidence: float = 1.0,
+    error_type: str = "",
+    suggestion: str = "",
+    truncated: bool = False,
+) -> dict[str, Any]:
+    """
+    P0: 结构化工具返回值
+    最小精简版，只包含模型做决策最需要的元信息。
+    truncated: 结果是否被截断（LLM 看到 true 不会因结果不全而无限重试）。
+    """
+    result: dict[str, Any] = {
+        "status": status,
+        "summary": summary,
+    }
+    if data is not None:
+        result["data"] = data
+    result["meta"] = {
+        "hit_count": hit_count,
+        "missing_info": missing_info or [],
+        "confidence": confidence,
+        "truncated": truncated,
+    }
+    if error_type or suggestion:
+        result["error"] = {
+            "type": error_type,
+            "suggestion": suggestion,
+        }
+    return result
+
+
+def _wrap_raw_result(raw: dict[str, Any], tool_name: str = "") -> dict[str, Any]:
+    """
+    P0: 将旧格式 ok/data/error 返回值包装为结构化返回体
+    保持向后兼容，旧代码无需改动。
+    """
+    if "status" in raw and "summary" in raw:
+        return raw
+
+    ok = raw.get("ok", True)
+    if ok:
+        data = raw.get("data", raw)
+        hit_count = 0
+        truncated = False
+        if isinstance(data, list):
+            hit_count = len(data)
+            # P0-2: 结果兜底截断，防止海量结果塞爆上下文
+            if hit_count > _MAX_RESULT_ITEMS:
+                data = data[:_MAX_RESULT_ITEMS]
+                truncated = True
+        elif isinstance(data, dict):
+            hit_count = 1
+        summary = raw.get("summary", "")
+        if not summary:
+            if hit_count > 0:
+                summary = f"{tool_name} 执行成功，返回 {hit_count} 条结果"
+            else:
+                summary = f"{tool_name} 执行成功"
+        if truncated:
+            summary += "（结果已截断）"
+        return _make_structured_result(
+            status="success",
+            summary=summary,
+            data=data if truncated else raw,
+            hit_count=hit_count,
+            confidence=0.9,
+            truncated=truncated,
+        )
+    else:
+        error_msg = raw.get("error", "unknown error")
+        error_code = raw.get("code", "")
+        # P1-2: 安全护栏阻断也归为权限/安全类错误（security 终止、禁止重试），而非普通 execution
+        is_blocked = raw.get("blocked", False) or error_code == "BLOCKED_BY_GUARD"
+        is_confirm = raw.get("confirm_required", False)
+
+        if is_blocked:
+            status = "error"
+            etype = "permission"
+            suggestion = "该操作被安全策略拦截，请更换工具或修改参数"
+        elif is_confirm:
+            status = "error"
+            etype = "confirmation_required"
+            suggestion = raw.get("message", "需要用户确认后才能执行")
+        elif "PATH_NOT_FOUND" in error_code or "找不到" in error_msg:
+            status = "error"
+            etype = "resource_not_found"
+            suggestion = "目标路径/应用不存在，请检查路径或使用 file:search 查找"
+        elif "无法连接" in error_msg:
+            status = "error"
+            etype = "transient"
+            suggestion = "桌面执行器未启动，请确保 Electron 主进程运行中"
+        else:
+            status = "error"
+            etype = "execution"
+            suggestion = f"执行失败: {error_msg}"
+
+        return _make_structured_result(
+            status=status,
+            summary=error_msg,
+            data=raw,
+            hit_count=0,
+            confidence=0.0,
+            error_type=etype,
+            suggestion=suggestion,
+        )
+
+
+def _guess_image_mime(path: str) -> str:
+    """根据扩展名推断图片 MIME 类型。"""
+    ext = os.path.splitext(path)[1].lower()
+    return {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    }.get(ext, "application/octet-stream")
+
+
+def _probe_image_size(path: str) -> tuple[int | None, int | None]:
+    """探测图片宽高：优先 PIL，退化到 PNG 文件头。返回 (width, height) 或 (None, None)。"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            w, h = im.size
+            return int(w), int(h)
+    except Exception:
+        pass
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", head[16:24])
+    except Exception:
+        pass
+    return None, None
+
+
+async def _vision_llm_understand(base_url: str, model: str, api_key: str, b64: str, mime: str, question: str) -> str:
+    """调用 OpenAI 兼容多模态接口做图像语义理解，返回文本描述。"""
+    url = (base_url.rstrip("/") + "/chat/completions") if base_url else "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": question},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            ],
+        }],
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload,
+                                timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"vision API HTTP {resp.status}: {(await resp.text())[:300]}")
+            data = await resp.json()
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        raise RuntimeError("vision API 返回结构异常") from None
+
+
+async def _exec_image_understand(args: dict[str, Any]) -> dict[str, Any]:
+    """
+    P1-2 image:understand 服务端实现：
+    读取图片 → base64 编码 → 尝试多模态 LLM 语义理解 → 输出结构化结果。
+    未配置 VISION_MODEL 时降级返回图片元数据（不静默失败）。
+    """
+    image_path = str(args.get("image_path", "") or "").strip()
+    question = str(args.get("question", "") or "").strip() or "请描述这张图片的内容"
+    if not image_path or not os.path.exists(image_path):
+        return _make_structured_result(
+            status="error",
+            summary="图片不存在或路径为空",
+            data={"image_path": image_path, "exists": bool(image_path) and os.path.exists(image_path)},
+            confidence=0.0,
+            error_type="resource_not_found",
+            suggestion="请先通过 image:screenshot 获取截图，再传入有效的 image_path",
+        )
+
+    try:
+        with open(image_path, "rb") as f:
+            raw = f.read()
+        b64 = base64.b64encode(raw).decode("ascii")
+        mime = _guess_image_mime(image_path)
+        width, height = _probe_image_size(image_path)
+        meta = {
+            "path": image_path,
+            "size": len(raw),
+            "mime": mime,
+            "width": width,
+            "height": height,
+            "base64_length": len(b64),
+        }
+    except Exception as e:
+        logger.warning(f"image:understand 读取图片失败: {e}")
+        return _make_structured_result(
+            status="error",
+            summary=f"读取图片失败: {e}",
+            data={"image_path": image_path},
+            confidence=0.0,
+            error_type="execution",
+            suggestion="请确认文件为可读的图片格式",
+        )
+
+    vision_model = os.getenv("VISION_MODEL", "").strip()
+    vision_api = os.getenv("VISION_API_KEY", os.getenv("OPENAI_API_KEY", "")).strip()
+    vision_base = os.getenv("VISION_BASE_URL", os.getenv("OPENAI_BASE_URL", "")).strip()
+    if vision_model and vision_api:
+        try:
+            answer = await _vision_llm_understand(vision_base, vision_model, vision_api, b64, mime, question)
+            return _make_structured_result(
+                status="success",
+                summary=answer,
+                data={"description": answer, **meta},
+                hit_count=1,
+                confidence=0.9,
+            )
+        except Exception as e:
+            logger.warning(f"image:understand 多模态调用失败，降级为元数据: {e}")
+
+    return _make_structured_result(
+        status="success",
+        summary=(
+            f"图片已读取（{meta['width']}x{meta['height']}, {meta['size']}B）。"
+            "未配置多模态模型 VISION_MODEL，已返回元数据；"
+            "配置 VISION_MODEL + VISION_API_KEY 后可获得语义描述。"
+        ),
+        data=meta,
+        hit_count=1,
+        confidence=0.5,
+    )
+
+
+def _tool_call_fingerprint(name: str, args: dict[str, Any]) -> str:
+    """
+    P1-3: 生成 (tool_name, 归一化参数) 指纹，用于识别完全相同的工具调用。
+
+    归一化：sort_keys + default=str，保证参数顺序无关、非 JSON 原生值(如 Path)能稳定序列化。
+    """
+    try:
+        normalized = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    except Exception:
+        normalized = str(sorted((k, str(v)) for k, v in args.items()))
+    return f"{name}:{normalized}"
 
 
 async def execute_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     执行 LLM 要求的工具调用，返回 tool 消息列表（供第二轮 LLM 使用）
+
+    P1-3: 对同一轮内完全相同的工具调用做指纹去重
+    - (tool_name, 归一化参数) 完全一致 → 只执行第一个，后续标记 DUPLICATE_CALL_SKIPPED
+    - 防止"相同写入被反复覆盖/重复请求把同一查询跑多次"，与 Electron 层去重同源。
     """
     results: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
     for call in tool_calls:
         name = call["function"]["name"]
         try:
             args = json.loads(call["function"]["arguments"])
         except (json.JSONDecodeError, KeyError):
             args = {}
+
+        fp = _tool_call_fingerprint(name, args)
+        if fp in seen:
+            logger.warning(
+                f"[Executor] 拦截重复工具调用(完全相同参数): {name} "
+                f"dup_of_tool_call_id={seen[fp]} args={json.dumps(args, ensure_ascii=False)[:160]}"
+            )
+            results.append({
+                "tool_call_id": call["id"],
+                "role": "tool",
+                "content": json.dumps({
+                    "ok": False,
+                    "error": "重复的工具调用已在本轮拦截(完全相同参数)，标记为无效轮次",
+                    "code": "DUPLICATE_CALL_SKIPPED",
+                    "dup_of": seen[fp],
+                }, ensure_ascii=False),
+            })
+            continue
+        seen[fp] = call["id"]
 
         result = await _execute_single_tool(name, args)
         results.append({
@@ -180,6 +642,65 @@ async def execute_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str,
             "content": json.dumps(result, ensure_ascii=False),
         })
     return results
+
+
+async def _guard_dispatch_tool_call(
+    original_name: str, name: str, args: dict[str, Any]
+) -> dict[str, Any] | None:
+    """
+    P1-2: 全链路 tool_call_guard 接线（单点汇聚，堵住 orchestrator 旁路）。
+
+    所有工具执行都流经 _execute_single_tool（Graph 与 llm/orchestrator 的共同汇聚点）。
+    此前 tool_call_guard_hook 只在 graph 的 tool_execute_with_hooks 触发，
+    llm/orchestrator 直接调 execute_tool_calls → _execute_single_tool，会绕过护栏，
+    导致高风险/不可逆操作（rm -rf、DROP TABLE 等）在此路径无拦截。
+
+    此处统一分发 HookEvent.TOOL_CALL；被阻断则返回结构化错误，否则返回 None 放行。
+    用延迟导入避免 executor ↔ hooks 循环依赖。
+    """
+    try:
+        from app.services.hooks import init_hooks, dispatch_hook
+        from app.services.hooks.types import HookEvent
+
+        init_hooks()
+        result_ctx = await dispatch_hook(
+            HookEvent.TOOL_CALL,
+            {
+                "tool_name": original_name or name,
+                "tool_args": args,
+            },
+        )
+    except Exception:
+        # 护栏自身故障时降级放行但打 loud warning（不静默吞掉），保持一致行为
+        logger.warning(
+            "[Executor] tool_call_guard 分发失败，降级放行(风险可见): "
+            f"tool={original_name or name}",
+            exc_info=True,
+        )
+        return None
+
+    if result_ctx.get("_hook_blocked"):
+        risk = result_ctx.get("risk_level", "unknown")
+        blocked_by = result_ctx.get("_hook_blocked_by", "unknown")
+        reason = (
+            result_ctx.get("_hook_blocked_reason", "")
+            or result_ctx.get("blocked_reason", "")
+        )
+        reason_txt = f"：{reason}" if reason else ""
+        logger.warning(
+            f"[Executor] 工具调用被护栏阻断: tool={original_name or name} "
+            f"risk={risk} by={blocked_by}{reason_txt}"
+        )
+        return _wrap_raw_result(
+            {
+                "ok": False,
+                "error": f"工具调用被安全护栏阻断: risk={risk}, by={blocked_by}{reason_txt}",
+                "code": "BLOCKED_BY_GUARD",
+                "risk_level": risk,
+            },
+            tool_name=name,
+        )
+    return None
 
 
 async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -193,12 +714,28 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
         cmd = args.get("command", "")
         cmd_args = args.get("args", [])
         args = {"command": cmd, "args": cmd_args}
+
+    # ===== 0-guard. P1-2: 全链路 Guard Hook 接线（堵 orchestrator 旁路）=====
+    blocked = await _guard_dispatch_tool_call(original_name, name, args)
+    if blocked is not None:
+        return blocked
+
+    # ===== 0-pre. P0: 参数校验层（在映射后、业务逻辑前）=====
+    validation_error = _validate_tool_params(name, args)
+    if validation_error is not None:
+        logger.warning(f"[Executor] 参数校验失败: tool={name}, args={json.dumps(args, ensure_ascii=False)[:200]}")
+        return validation_error
+
+    # ===== 0-vision. image:understand 服务端多模态语义理解（不经过 Electron）=====
+    if name == "image:understand":
+        return await _exec_image_understand(args)
+
     if original_name == "systemControl":
         action = args.get("action", "")
         if action in SYSTEM_CONTROL_COMMANDS:
             args = {"command": SYSTEM_CONTROL_COMMANDS[action]}
         else:
-            return {"ok": False, "error": f"Unknown systemControl action: {action}"}
+            return _wrap_raw_result({"ok": False, "error": f"Unknown systemControl action: {action}"}, tool_name=name)
     if original_name == "searchFiles":
         args = {"path": args.get("dir", ""), "pattern": args.get("keyword", "*")}
     if original_name == "diskCleanup":
@@ -253,11 +790,11 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
         # 如果解析后仍无效，直接拦截，不发给 Electron
         if not resolved_path or not os.path.isabs(resolved_path):
             _record_executor_failure(name, {"path": original_path}, "无法解析为有效绝对路径")
-            return {
+            return _wrap_raw_result({
                 "ok": False,
                 "error": f"找不到应用 {original_path}，请提供完整路径 (VALIDATION_SKIPPED)",
                 "code": "PATH_NOT_FOUND"
-            }
+            }, tool_name=name)
         
         # 如果路径被修改了，打印日志
         if resolved_path != original_path:
@@ -267,7 +804,7 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
     if name == "browser:search":
         query = args.get("query", "")
         if not query:
-            return {"ok": False, "error": "browser:search 需要 query 参数"}
+            return _wrap_raw_result({"ok": False, "error": "browser:search 需要 query 参数"}, tool_name=name)
         import urllib.parse
         is_chinese = any('\u4e00' <= c <= '\u9fff' for c in query)
         search_url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}" if is_chinese else f"https://www.google.com/search?q={urllib.parse.quote(query)}"
@@ -280,17 +817,17 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
     if name == "keyboard:type":
         text = args.get("text", "")
         if not text:
-            return {"ok": False, "error": "keyboard:type 需要 text 参数"}
+            return _wrap_raw_result({"ok": False, "error": "keyboard:type 需要 text 参数"}, tool_name=name)
 
     # 1. requires_confirmation 拦截：高危工具需用户确认
     tool_def = tool_registry.get_tool(name)
     if tool_def and tool_def.requires_confirmation:
-        return {
+        return _wrap_raw_result({
             "ok": False,
             "confirm_required": True,
             "action": name,
             "message": f"工具 {name} 需要用户确认后才能执行（risk={tool_def.risk}）",
-        }
+        }, tool_name=name)
 
     # 2. 进程黑名单校验：禁止结束系统关键进程
     PROTECTED_PROCESS_NAMES = {
@@ -301,23 +838,23 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
     if name == "process:kill":
         kill_name = str(args.get("name", "")).strip().lower()
         if kill_name in PROTECTED_PROCESS_NAMES:
-            return {"ok": False, "error": f"进程 {kill_name} 是系统关键进程，禁止结束", "blocked": True}
+            return _wrap_raw_result({"ok": False, "error": f"进程 {kill_name} 是系统关键进程，禁止结束", "blocked": True}, tool_name=name)
 
     # 3. 危险命令拦截
     if name == "shell":
         cmd = args.get("command", "")
         blacklist = ["rm -rf /", "format", "del /f /s /q c:\\", "rd /s /q c:", "mkfs"]
         if any(b in cmd.lower() for b in blacklist):
-            return {"ok": False, "error": "危险命令被拦截", "blocked": True}
+            return _wrap_raw_result({"ok": False, "error": "危险命令被拦截", "blocked": True}, tool_name=name)
 
     # 2. 需确认操作（不直接执行，返回确认请求）
     if name == "systemControl" and args.get("action") in ("shutdown", "sleep"):
-        return {
+        return _wrap_raw_result({
             "ok": False,
             "confirm_required": True,
             "action": args["action"],
             "message": f"即将执行 {args['action']}，请确认是否继续？",
-        }
+        }, tool_name=name)
 
     # 3. 调 Electron 主进程执行
     result: dict[str, Any]
@@ -355,4 +892,5 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
         if name == "app:launch" and "找不到" in result.get("error", ""):
             result["code"] = "PATH_NOT_FOUND"
 
-    return result
+    # ===== 5. P0: 包装为结构化返回值 =====
+    return _wrap_raw_result(result, tool_name=name)

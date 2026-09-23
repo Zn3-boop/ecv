@@ -1,0 +1,171 @@
+### ============================================================
+### Desktop Agent LangGraph HTTP 接口测试脚本
+### 使用 REST Client (VSCode 插件) 或手动 curl 执行
+### ============================================================
+
+@baseUrl = http://127.0.0.1:8000
+@userId = test_user_001
+@sessionId = sess_{{$timestamp}}
+
+### --------------------------------------------------
+### 0. 健康检查
+### --------------------------------------------------
+GET {{baseUrl}}/health
+Accept: application/json
+
+### --------------------------------------------------
+### 1. Metrics 摘要
+### --------------------------------------------------
+GET {{baseUrl}}/metrics
+Accept: application/json
+
+### ==========================================================
+### LangGraph 状态图接口
+### ==========================================================
+
+### --------------------------------------------------
+### 2. 正常流程：打开微信
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/invoke
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "{{sessionId}}",
+  "query": "打开微信",
+  "recursion_limit": 15
+}
+
+### --------------------------------------------------
+### 3. 正常流程：查看系统进程
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/invoke
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_proc_001",
+  "query": "查看系统进程"
+}
+
+### --------------------------------------------------
+### 4. 命令注入攻击：shell 元字符拦截
+###    预期：success=false, error_type=security
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/invoke
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_inject_001",
+  "query": "打开 C:\\Windows\\System32\\cmd.exe; rm -rf /"
+}
+
+### --------------------------------------------------
+### 5. 高风险脚本：触发 HITL 人工审批
+###    预期：approval_status=pending
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/invoke
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_risk_001",
+  "query": "运行 cleanup.bat"
+}
+
+### --------------------------------------------------
+### 6. HITL 审批：批准高风险操作
+###    先用场景5获取 session_id，填入下方
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/approval
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_risk_001",
+  "action": "approve"
+}
+
+### --------------------------------------------------
+### 7. HITL 审批：拒绝高风险操作
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/approval
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_risk_002",
+  "action": "reject"
+}
+
+### --------------------------------------------------
+### 8. 低置信度：触发意图澄清
+###    预期：need_clarification=true
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/graph/invoke
+Content-Type: application/json
+
+{
+  "user_id": "{{userId}}",
+  "session_id": "sess_clarify_001",
+  "query": "帮我弄一下"
+}
+
+### --------------------------------------------------
+### 9. 查询会话 checkpoint 状态快照
+### --------------------------------------------------
+GET {{baseUrl}}/desktop/graph/state?user_id={{userId}}&session_id=sess_proc_001
+Accept: application/json
+
+### --------------------------------------------------
+### 10. 查询会话 checkpoint 历史记录
+### --------------------------------------------------
+GET {{baseUrl}}/desktop/graph/history?user_id={{userId}}&session_id=sess_proc_001&limit=10
+Accept: application/json
+
+### ==========================================================
+### 原有桌面控制接口（保持兼容）
+### ==========================================================
+
+### --------------------------------------------------
+### 11. 查找应用
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/find
+Content-Type: application/json
+
+{
+  "name": "微信"
+}
+
+### --------------------------------------------------
+### 12. 打开应用
+### --------------------------------------------------
+POST {{baseUrl}}/desktop/open
+Content-Type: application/json
+
+{
+  "path_or_name": "WeChat.exe"
+}
+
+### --------------------------------------------------
+### 13. 列出运行中的应用
+### --------------------------------------------------
+GET {{baseUrl}}/desktop/running
+Accept: application/json
+
+### ==========================================================
+### Agent 原有接口（保持兼容）
+### ==========================================================
+
+### --------------------------------------------------
+### 14. Agent 命令处理
+### --------------------------------------------------
+POST {{baseUrl}}/agent/command
+Content-Type: application/json
+
+{
+  "text": "打开微信",
+  "session_id": "agent_sess_001",
+  "auto_execute": false
+}

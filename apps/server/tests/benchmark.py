@@ -49,7 +49,7 @@ def benchmark_intent_detection():
     all_commands = simple_commands + complex_commands
 
     start = time.perf_counter()
-    results = [detect_intent(cmd) for cmd in all_commands]
+    results = [detect_intent(cmd)[0] for cmd in all_commands]
     elapsed = (time.perf_counter() - start) * 1000
 
     local_count = sum(1 for r in results if r != "llm_decompose")
