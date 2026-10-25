@@ -91,3 +91,6 @@ jev_lite/
 
 # Pytest cache
 .pytest_cache/
+# Runtime SQLite DB (local test data)
+apps/server/data/agent.db
+
