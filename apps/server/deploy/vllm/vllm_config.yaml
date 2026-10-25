@@ -1,0 +1,38 @@
+# vLLM 部署配置
+# 适用于 Qwen2.5-7B-Instruct / Qwen2.5-72B-Instruct 等模型
+
+model: "Qwen/Qwen2.5-7B-Instruct"
+served_model_name: "qwen2.5-7b-instruct"
+
+# 推理引擎
+tensor_parallel_size: 1
+pipeline_parallel_size: 1
+
+# 显存与调度
+gpu_memory_utilization: 0.90
+max_num_seqs: 256
+max_model_len: 8192
+
+# Prefix Caching（Agent多轮对话核心优化）
+enable_prefix_caching: true
+
+# Chunked Prefill（减少长prompt对decode的阻塞）
+enable_chunked_prefill: true
+
+# CUDA Graph（减少小batch的kernel launch开销）
+enforce_eager: false
+cuda_graph_max_bs: 16
+
+# 结构化输出 / Guided Decoding（Function Calling必须）
+guided_decoding_backend: "xgrammar"
+
+# KV Cache 量化（节省显存，轻微质量损失）
+kv_cache_dtype: "fp8_e5m2"
+
+# 并行采样
+disable_log_stats: false
+disable_log_requests: false
+
+# OpenAI兼容API
+host: "0.0.0.0"
+port: 8001

@@ -7,8 +7,12 @@ import os
 import re
 import struct
 import time
-import winreg
 from typing import Any
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 import aiohttp
 
@@ -113,14 +117,15 @@ main();
 
 def _find_app_path(name: str) -> str | None:
     """根据应用名查找 Windows 绝对路径（使用软件索引，支持模糊匹配）"""
-    # 优先使用软件索引（支持模糊匹配、别名、系统内置工具）
     entry = find_software(name)
     if entry and entry.exe_path and os.path.exists(entry.exe_path):
         return entry.exe_path
-    
-    # 兜底：传统注册表 App Paths 查找
+
+    if winreg is None:
+        return None
+
     exe_name = name if name.endswith('.exe') else f"{name}.exe"
-    
+
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
                           r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths") as key:
@@ -133,7 +138,7 @@ def _find_app_path(name: str) -> str | None:
                 pass
     except Exception:
         pass
-    
+
     return None
 
 
@@ -586,6 +591,130 @@ async def _exec_image_understand(args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+async def _exec_rag_search(args: dict[str, Any]) -> dict[str, Any]:
+    """
+    rag_search 服务端实现：调用 RAG 服务检索内部知识库
+    """
+    query = str(args.get("query", "") or "").strip()
+    top_k = int(args.get("top_k", 5))
+    rerank = bool(args.get("rerank", False))
+    user_acl = args.get("acl_tags") or ["public"]
+
+    if not query:
+        return _make_structured_result(
+            status="error",
+            summary="rag_search 需要 query 参数",
+            confidence=0.0,
+            error_type="schema",
+            suggestion="请提供检索查询关键词",
+        )
+
+    try:
+        from app.services.rag import get_rag_service
+        rag = get_rag_service()
+        result = await rag.query(
+            query=query,
+            user_acl_tags=user_acl,
+            top_k=top_k,
+            enable_rerank=rerank,
+        )
+        retrieval_results = result.get("retrieval", {}).get("results", [])
+        summaries = []
+        for i, r in enumerate(retrieval_results[:top_k]):
+            content = r.get("content", "")[:200]
+            doc_title = r.get("doc_title", "")
+            score = r.get("rrf_score", r.get("score", 0.0))
+            summaries.append(f"[{i+1}] {doc_title}: {content} (score={score:.3f})")
+
+        summary_text = f"检索到 {len(retrieval_results)} 条相关结果：\n" + "\n".join(summaries) if summaries else "未找到相关结果"
+
+        return _make_structured_result(
+            status="success",
+            summary=summary_text,
+            data={"results": retrieval_results[:top_k], "total": len(retrieval_results)},
+            hit_count=len(retrieval_results),
+            confidence=min(0.5 + len(retrieval_results) * 0.1, 1.0),
+        )
+    except Exception as e:
+        logger.warning(f"rag_search 执行失败: {e}")
+        return _make_structured_result(
+            status="error",
+            summary=f"RAG检索失败: {e}",
+            confidence=0.0,
+            error_type="execution",
+            suggestion="请确认RAG服务已初始化且知识库不为空",
+        )
+
+
+async def _exec_ocr_screen(args: dict[str, Any]) -> dict[str, Any]:
+    """
+    ocr_screen 服务端实现：对截图执行OCR文字识别
+    """
+    image_path = str(args.get("image_path", "") or "").strip()
+
+    if not image_path:
+        try:
+            from app.services.screenshot import take_screenshot
+            image_path = await take_screenshot()
+        except Exception as e:
+            return _make_structured_result(
+                status="error",
+                summary=f"自动截图失败: {e}",
+                confidence=0.0,
+                error_type="execution",
+                suggestion="请提供 image_path 参数或确保截图服务可用",
+            )
+
+    if not os.path.exists(image_path):
+        return _make_structured_result(
+            status="error",
+            summary=f"图片不存在: {image_path}",
+            confidence=0.0,
+            error_type="resource_not_found",
+            suggestion="请先截图或提供有效的图片路径",
+        )
+
+    try:
+        import asyncio
+        from app.services.ocr import get_ocr_service
+        ocr = get_ocr_service()
+        result = await asyncio.to_thread(ocr.recognize_image, image_path)
+
+        if not result.success:
+            return _make_structured_result(
+                status="error",
+                summary=f"OCR识别失败: {result.error}",
+                confidence=0.0,
+                error_type="execution",
+                suggestion="请确认OCR引擎(PaddleOCR/Tesseract)已安装",
+            )
+
+        elements = ocr.extract_screen_elements(result)
+        element_texts = [f"- {e.text} @ {e.bbox} (conf={e.confidence:.2f})" for e in elements[:20]]
+        summary = f"识别到 {len(elements)} 个屏幕元素：\n" + "\n".join(element_texts) if element_texts else "屏幕上未识别到文字"
+
+        return _make_structured_result(
+            status="success",
+            summary=summary,
+            data={
+                "full_text": result.text,
+                "elements": [e.to_dict() for e in elements],
+                "engine": result.engine,
+                "latency_ms": result.latency_ms,
+            },
+            hit_count=len(elements),
+            confidence=0.85,
+        )
+    except Exception as e:
+        logger.warning(f"ocr_screen 执行失败: {e}")
+        return _make_structured_result(
+            status="error",
+            summary=f"OCR执行失败: {e}",
+            confidence=0.0,
+            error_type="execution",
+        )
+
+
 def _tool_call_fingerprint(name: str, args: dict[str, Any]) -> str:
     """
     P1-3: 生成 (tool_name, 归一化参数) 指纹，用于识别完全相同的工具调用。
@@ -729,6 +858,14 @@ async def _execute_single_tool(name: str, args: dict[str, Any]) -> dict[str, Any
     # ===== 0-vision. image:understand 服务端多模态语义理解（不经过 Electron）=====
     if name == "image:understand":
         return await _exec_image_understand(args)
+
+    # ===== 0-rag. rag_search 服务端RAG检索（不经过 Electron）=====
+    if name == "rag_search":
+        return await _exec_rag_search(args)
+
+    # ===== 0-ocr. ocr_screen 服务端OCR识别（不经过 Electron）=====
+    if name == "ocr_screen":
+        return await _exec_ocr_screen(args)
 
     if original_name == "systemControl":
         action = args.get("action", "")

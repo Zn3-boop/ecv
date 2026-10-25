@@ -88,7 +88,11 @@ class RAGService:
             ".go": "code", ".rs": "code", ".cpp": "code", ".c": "code",
             ".csv": "table", ".tsv": "table",
         }
+        image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".gif"}
         source_type = source_type_map.get(ext, "text")
+
+        if ext in image_extensions:
+            return await self._index_image(file_path, doc_id, doc_title, acl_tags)
 
         try:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -102,6 +106,56 @@ class RAGService:
         return await self.index_document(
             text=text, doc_id=did, doc_title=title,
             source_type=source_type, acl_tags=acl_tags,
+            source_url=file_path,
+        )
+
+    async def _index_image(
+        self,
+        file_path: str,
+        doc_id: str = "",
+        doc_title: str = "",
+        acl_tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """索引图片文件：OCR提取文字 + VLM语义描述，互补融合"""
+        import logging
+        _log = logging.getLogger(__name__)
+
+        title = doc_title or os.path.basename(file_path)
+        did = doc_id or os.path.basename(file_path)
+        text_parts: list[str] = []
+
+        try:
+            import asyncio
+            from app.services.ocr import get_ocr_service
+            ocr = get_ocr_service()
+            ocr_result = await asyncio.to_thread(ocr.recognize_image, file_path)
+            if ocr_result.success and ocr_result.text.strip():
+                text_parts.append(f"[OCR文字]\n{ocr_result.text.strip()}")
+                _log.info(f"Image index OCR: {len(ocr_result.text)} chars from {file_path}")
+        except Exception as e:
+            _log.debug(f"Image index OCR failed: {e}")
+
+        try:
+            from app.services.vlm import get_vlm_provider
+            vlm = get_vlm_provider()
+            if vlm.enabled:
+                description = await vlm.describe_image(
+                    prompt="请详细描述这张图片的内容，包括文字、UI元素、数据、图表等信息。",
+                    image=file_path,
+                )
+                if description and description.strip():
+                    text_parts.append(f"[VLM描述]\n{description.strip()}")
+                    _log.info(f"Image index VLM: {len(description)} chars from {file_path}")
+        except Exception as e:
+            _log.debug(f"Image index VLM failed: {e}")
+
+        if not text_parts:
+            return {"ok": False, "error": f"图片无法提取内容(OCR和VLM均失败): {file_path}"}
+
+        combined_text = "\n\n".join(text_parts)
+        return await self.index_document(
+            text=combined_text, doc_id=did, doc_title=title,
+            source_type="scan", acl_tags=acl_tags,
             source_url=file_path,
         )
 

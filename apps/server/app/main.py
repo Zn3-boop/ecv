@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ if hasattr(sys.stderr, 'reconfigure') and (sys.stderr.encoding or '').lower() !=
 
 load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 
-from app.api import agent, automation, browser, chat, desktop, health, provider, storage, system_app, task_filter, tools, voice, screenshot, store, content_generator, generator_settings, task_workflow, desktop_tools, subscription
+from app.api import agent, automation, browser, chat, desktop, health, provider, storage, system_app, task_filter, tools, voice, screenshot, store, content_generator, generator_settings, task_workflow, desktop_tools, subscription, ocr, metrics
 from app.services.storage import init_storage
 from app.utils.response_cleaner import clean_fastapi_response_body
 
@@ -42,6 +43,30 @@ async def lifespan(app: FastAPI):
             print("LangFuse disabled (env vars missing or init failed)")
     except Exception as e:
         print(f"Warning: LangFuse init failed (non-fatal): {e}")
+    try:
+        from app.services.vlm import get_vlm_provider
+        vlm = get_vlm_provider()
+        if vlm.enabled:
+
+            async def _warmup_vlm_background():
+                try:
+                    await vlm.warmup()
+                    print(f"VLM warmed up (background): {vlm.model_name} on {vlm.device}")
+                except Exception as e:
+                    print(f"Warning: VLM warmup failed (non-fatal): {e}")
+
+            asyncio.create_task(_warmup_vlm_background())
+            print("VLM warmup scheduled in background")
+        else:
+            print("VLM disabled (VLM_ENABLED != true)")
+    except Exception as e:
+        print(f"Warning: VLM init failed (non-fatal): {e}")
+    try:
+        from app.services.llm.model_router import get_model_router
+        router = get_model_router()
+        print(f"Model router initialized: simple={router._model_map.get('simple', '')}, complex={router._model_map.get('complex', '')}")
+    except Exception as e:
+        print(f"Warning: Model router init failed (non-fatal): {e}")
     yield
     # 关闭时执行（如需清理资源）
 
@@ -142,3 +167,5 @@ app.include_router(generator_settings.router)
 app.include_router(task_workflow.router)
 app.include_router(desktop_tools.router)
 app.include_router(subscription.router)
+app.include_router(ocr.router)
+app.include_router(metrics.router)

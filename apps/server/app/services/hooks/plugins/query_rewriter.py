@@ -153,3 +153,109 @@ class CompositeRewriter(QueryRewriter):
             rag_query=raw_query,
             web_query=raw_query,
         )
+
+
+class HyDERewriter(QueryRewriter):
+    """
+    HyDE (Hypothetical Document Embedding):
+    让LLM生成一个假设性回答，用这个回答的embedding去检索。
+    核心思想：假设性回答与真实文档的语义空间更近，比直接用query检索更准。
+    适用场景：用户查询模糊、简短、与文档语言风格差异大时。
+    """
+
+    _PROMPT = """请根据以下问题，写一段可能包含答案的文档片段。
+不要回答问题本身，而是写一段看起来像是来自知识库的文档段落。
+语言风格应正式、客观，像技术文档或百科条目。
+
+问题: {query}
+
+假设性文档片段:"""
+
+    async def rewrite(self, raw_query: str, context: dict[str, Any] | None = None) -> RewriteResult:
+        try:
+            from app.services.llm.provider import provider
+            prompt = self._PROMPT.format(query=raw_query)
+            hypo_doc = await provider.chat(
+                system_prompt="你是一个文档生成器，根据问题生成假设性文档片段。",
+                user_prompt=prompt,
+                temperature=0.0,
+            )
+            if hypo_doc and len(hypo_doc) > 20:
+                return RewriteResult(
+                    standalone_query=raw_query,
+                    rag_query=hypo_doc[:500],
+                    web_query=raw_query,
+                    retrieval_queries=[hypo_doc[:500], raw_query],
+                    rewrite_types=[RewriteType.EXPAND],
+                    confidence=0.75,
+                )
+        except Exception as e:
+            logger.debug(f"HyDE generation failed: {e}, falling back to raw query")
+
+        return RewriteResult(
+            standalone_query=raw_query,
+            rag_query=raw_query,
+            web_query=raw_query,
+            retrieval_queries=[raw_query],
+            rewrite_types=[RewriteType.NORMALIZE],
+            confidence=0.5,
+        )
+
+
+class QueryDecompositionRewriter(QueryRewriter):
+    """
+    Query Decomposition:
+    将复杂多跳问题拆分为多个子查询，并行检索后合并。
+    适用场景："A和B的区别"、"对比X和Y"、"A如何影响B"等复合问题。
+    """
+
+    _PROMPT = """将以下复杂问题拆分为2-4个独立的子问题，每个子问题可以单独检索回答。
+只输出JSON数组，不要其他文字。
+
+复杂问题: {query}
+
+子问题列表(JSON数组):"""
+
+    async def rewrite(self, raw_query: str, context: dict[str, Any] | None = None) -> RewriteResult:
+        if len(raw_query) < 15 or "和" not in raw_query and "对比" not in raw_query and "区别" not in raw_query:
+            return RewriteResult(
+                standalone_query=raw_query,
+                rag_query=raw_query,
+                web_query=raw_query,
+                retrieval_queries=[raw_query],
+                rewrite_types=[RewriteType.NORMALIZE],
+                confidence=1.0,
+            )
+
+        try:
+            from app.services.llm.provider import provider
+            prompt = self._PROMPT.format(query=raw_query)
+            response = await provider.chat(
+                system_prompt="你是查询分解专家，将复杂问题拆分为可独立检索的子问题。",
+                user_prompt=prompt,
+                temperature=0.0,
+            )
+
+            import json
+            sub_queries = json.loads(response.strip())
+            if isinstance(sub_queries, list) and len(sub_queries) >= 2:
+                all_queries = [raw_query] + [q for q in sub_queries if isinstance(q, str) and q.strip()]
+                return RewriteResult(
+                    standalone_query=raw_query,
+                    rag_query=raw_query,
+                    web_query=raw_query,
+                    retrieval_queries=all_queries,
+                    rewrite_types=[RewriteType.EXPAND],
+                    confidence=0.8,
+                )
+        except Exception as e:
+            logger.debug(f"Query decomposition failed: {e}")
+
+        return RewriteResult(
+            standalone_query=raw_query,
+            rag_query=raw_query,
+            web_query=raw_query,
+            retrieval_queries=[raw_query],
+            rewrite_types=[RewriteType.NORMALIZE],
+            confidence=0.6,
+        )

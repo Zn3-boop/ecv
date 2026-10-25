@@ -56,6 +56,19 @@ interface AppContextValue {
   handlePause: () => Promise<void>
   handleResume: () => Promise<void>
   speakText: (text: string, label?: string, audioBase64?: string, mimeType?: string) => void
+  // 静音 + Toast
+  isMuted: boolean
+  setIsMuted: React.Dispatch<React.SetStateAction<boolean>>
+  toasts: ToastItem[]
+  addToast: (toast: Omit<ToastItem, 'id'>) => void
+  removeToast: (id: string) => void
+}
+
+export interface ToastItem {
+  id: string
+  type: 'success' | 'error' | 'warning' | 'info'
+  message: string
+  duration?: number
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -75,6 +88,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState('')
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysis | null>(null)
   const [analyzedTools, setAnalyzedTools] = useState<Set<string>>(new Set())
+  const [isMuted, setIsMuted] = useState(false)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+
+  const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    setToasts(prev => [...prev.slice(-9), { ...toast, id }])
+    const dur = toast.duration ?? 3000
+    if (dur > 0) {
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), dur)
+    }
+  }, [])
+
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
 
   // 初始化 desktopAPI
   useEffect(() => {
@@ -88,7 +116,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const { metrics } = useSystemMetrics(desktopAPI)
-  const { speakText, cloudAudioStatus } = useVoiceAgent(desktopAPI)
+  const { speakText: _speakText, cloudAudioStatus } = useVoiceAgent(desktopAPI)
+
+  const speakText = useCallback((
+    text: string,
+    label?: string,
+    audioBase64?: string,
+    mimeType?: string
+  ) => {
+    if (isMuted) return
+    _speakText(text, label, audioBase64, mimeType)
+  }, [_speakText, isMuted])
 
   // 监听待确认操作
   useEffect(() => {
@@ -335,6 +373,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     handlePause,
     handleResume,
     speakText,
+    isMuted,
+    setIsMuted,
+    toasts,
+    addToast,
+    removeToast,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

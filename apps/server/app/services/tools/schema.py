@@ -364,4 +364,40 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search",
+            "description": "搜索内部知识库，检索与问题相关的文档片段。当需要查找内部资料、文档、规范、历史记录等信息时使用。Agent可自主决定何时检索、检索什么关键词、是否需要多次检索不同关键词。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "检索查询关键词"},
+                    "top_k": {"type": "integer", "description": "返回最相关的K个结果，默认5", "default": 5},
+                    "rerank": {"type": "boolean", "description": "是否启用精排（更准确但更慢），默认false", "default": False},
+                    "acl_tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "访问控制标签，默认[\"public\"]。如需检索受限文档请传入对应标签。",
+                        "default": ["public"]
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ocr_screen",
+            "description": "对屏幕截图执行OCR文字识别，提取屏幕上的文字和元素坐标。用于理解屏幕内容、定位UI元素。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_path": {"type": "string", "description": "截图文件路径。如未提供则先截取当前屏幕。"}
+                },
+                "required": []
+            }
+        }
+    },
 ]

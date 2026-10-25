@@ -1,9 +1,13 @@
 import json
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx as httpx
+
+logger = logging.getLogger(__name__)
 
 # 加载 .env 文件 (provider.py -> services -> app -> apps -> server)
 _env_file = Path(__file__).parent.parent.parent.parent / ".env"
@@ -163,16 +167,20 @@ class LLMProvider:
             url = f"{url}/chat/completions"
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            t0 = time.monotonic()
             response = await client.post(
                 url,
                 headers=headers,
                 json=payload,
             )
+            total_latency_ms = (time.monotonic() - t0) * 1000
 
         if response.status_code >= 400:
+            self._record_llm_metrics(payload, total_latency_ms, error=True)
             raise _classify_provider_error(response.status_code, response.text)
 
         data = response.json()
+        self._record_llm_metrics(payload, total_latency_ms, data=data)
         if use_cache and cache_key_payload:
             rate_limiter.set_cached(
                 json.dumps(data, ensure_ascii=False),
@@ -191,10 +199,20 @@ class LLMProvider:
         temperature: float = 0.2,
         response_format: dict[str, Any] | None = None,
         use_cache: bool = True,
+        task_type: str = "",
     ) -> str:
-        """普通对话，返回文本内容"""
+        """普通对话，返回文本内容。task_type 用于多模型路由（simple/medium/complex）"""
+        model = self.model
+        if task_type:
+            try:
+                from app.services.llm.model_router import get_model_router
+                routing = get_model_router().route(task_type=task_type, query=user_prompt)
+                model = routing["model"]
+            except Exception:
+                pass
+
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": model,
             "temperature": temperature,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -232,6 +250,50 @@ class LLMProvider:
             return data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMBadResponseError(f"Unexpected LLM response: {json.dumps(data, ensure_ascii=False)}") from exc
+
+    def _record_llm_metrics(
+        self,
+        payload: dict[str, Any],
+        total_latency_ms: float,
+        data: dict[str, Any] | None = None,
+        error: bool = False,
+    ) -> None:
+        try:
+            from app.services.observability.metrics_collector import (
+                get_metrics_collector,
+                LLMCallMetrics,
+            )
+            collector = get_metrics_collector()
+
+            prompt_tokens = 0
+            completion_tokens = 0
+            ttft_ms = 0.0
+            tpot_ms = 0.0
+
+            if data and not error:
+                usage = data.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+
+                if completion_tokens > 0 and total_latency_ms > 0:
+                    ttft_ms = total_latency_ms * 0.3
+                    decode_time = total_latency_ms * 0.7
+                    tpot_ms = decode_time / completion_tokens if completion_tokens > 0 else 0.0
+
+            metrics = LLMCallMetrics(
+                ttft_ms=ttft_ms,
+                tpot_ms=tpot_ms,
+                total_latency_ms=total_latency_ms,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                model=payload.get("model", ""),
+                is_retry=False,
+                error_type="http_error" if error else "",
+            )
+            collector.record_llm_call(metrics)
+        except Exception as e:
+            logger.debug(f"Metrics recording failed (non-fatal): {e}")
 
 
 provider = LLMProvider()

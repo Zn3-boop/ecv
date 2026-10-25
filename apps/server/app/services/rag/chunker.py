@@ -199,3 +199,162 @@ class Chunker:
     ) -> list[dict[str, Any]]:
         cleaned = re.sub(r'\s+', ' ', text).strip()
         return self._chunk_structured(cleaned, doc_id, doc_title, "scan", acl_tags, source_url)
+
+
+class ParentChildChunker:
+    """
+    父子切分：小块检索、大块喂给LLM
+    - 子chunk（小，200字）：用于精确检索
+    - 父chunk（大，800字）：用于提供完整上下文给LLM
+    - 检索命中子chunk时，返回其所属的父chunk
+    """
+
+    def __init__(
+        self,
+        parent_size: int = 800,
+        child_size: int = 200,
+        parent_overlap_ratio: float = 0.1,
+        child_overlap_ratio: float = 0.15,
+    ):
+        self.parent_size = parent_size
+        self.child_size = child_size
+        self.parent_overlap = int(parent_size * parent_overlap_ratio)
+        self.child_overlap = int(child_size * child_overlap_ratio)
+
+    def chunk_text(
+        self,
+        text: str,
+        doc_id: str = "",
+        doc_title: str = "",
+        source_type: str = "text",
+        acl_tags: list[str] | None = None,
+        source_url: str = "",
+    ) -> list[dict[str, Any]]:
+        parent_chunks = self._sliding_window(text, self.parent_size, self.parent_overlap)
+        results: list[dict[str, Any]] = []
+
+        for parent_idx, parent_text in enumerate(parent_chunks):
+            parent_id = f"{doc_id}_p{parent_idx}" if doc_id else f"p{parent_idx}"
+            child_chunks = self._sliding_window(parent_text, self.child_size, self.child_overlap)
+
+            parent_meta = make_chunk_meta(
+                content=parent_text,
+                doc_id=doc_id,
+                doc_title=doc_title,
+                section_path=[f"parent_{parent_idx}"],
+                chunk_index=parent_idx,
+                source_type=source_type,
+                acl_tags=acl_tags,
+                source_url=source_url,
+            )
+            parent_meta.is_parent = True
+            parent_meta.child_count = len(child_chunks)
+
+            results.append({
+                "content": parent_text,
+                "meta": {**parent_meta.to_dict(), "is_parent": True, "child_count": len(child_chunks)},
+            })
+
+            for child_idx, child_text in enumerate(child_chunks):
+                child_meta = make_chunk_meta(
+                    content=child_text,
+                    doc_id=doc_id,
+                    doc_title=doc_title,
+                    section_path=[f"parent_{parent_idx}", f"child_{child_idx}"],
+                    chunk_index=parent_idx * 10 + child_idx,
+                    source_type=source_type,
+                    acl_tags=acl_tags,
+                    source_url=source_url,
+                )
+
+                results.append({
+                    "content": child_text,
+                    "meta": {
+                        **child_meta.to_dict(),
+                        "is_parent": False,
+                        "parent_id": parent_id,
+                        "parent_chunk_index": parent_idx,
+                    },
+                })
+
+        return results
+
+    @staticmethod
+    def _sliding_window(text: str, chunk_size: int, overlap: int) -> list[str]:
+        if len(text) <= chunk_size:
+            return [text] if text.strip() else []
+        chunks: list[str] = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            if chunk.strip():
+                chunks.append(chunk)
+            start += chunk_size - overlap
+            if start >= len(text):
+                break
+        return chunks
+
+
+class SentenceWindowChunker:
+    """
+    句子窗口检索：以句子为最小检索单元，命中后返回前后N句作为上下文窗口
+    - 检索：精确匹配单个句子
+    - 返回：匹配句子 ± window_size 句的上下文
+    """
+
+    def __init__(self, window_size: int = 2, min_sentence_len: int = 10):
+        self.window_size = window_size
+        self.min_sentence_len = min_sentence_len
+
+    def chunk_text(
+        self,
+        text: str,
+        doc_id: str = "",
+        doc_title: str = "",
+        source_type: str = "text",
+        acl_tags: list[str] | None = None,
+        source_url: str = "",
+    ) -> list[dict[str, Any]]:
+        sentences = self._split_sentences(text)
+        if not sentences:
+            return []
+
+        results: list[dict[str, Any]] = []
+        for i, sentence in enumerate(sentences):
+            if len(sentence.strip()) < self.min_sentence_len:
+                continue
+
+            context_start = max(0, i - self.window_size)
+            context_end = min(len(sentences), i + self.window_size + 1)
+            context = " ".join(sentences[context_start:context_end])
+
+            meta = make_chunk_meta(
+                content=sentence,
+                doc_id=doc_id,
+                doc_title=doc_title,
+                section_path=[f"sentence_{i}"],
+                chunk_index=i,
+                source_type=source_type,
+                acl_tags=acl_tags,
+                source_url=source_url,
+            )
+
+            results.append({
+                "content": sentence,
+                "meta": {
+                    **meta.to_dict(),
+                    "context_window": context,
+                    "sentence_index": i,
+                    "window_start": context_start,
+                    "window_end": context_end - 1,
+                },
+            })
+
+        return results
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        pattern = re.compile(r'(?<=[。！？；\.\!\?;])\s*')
+        sentences = pattern.split(text)
+        return [s.strip() for s in sentences if s.strip()]

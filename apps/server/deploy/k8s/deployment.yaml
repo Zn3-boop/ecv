@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: desktop-agent-api
+  labels:
+    app: desktop-agent
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: desktop-agent
+      component: api
+  template:
+    metadata:
+      labels:
+        app: desktop-agent
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: desktop-agent-api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: LLM_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: llm-base-url
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-secrets
+                  key: llm-api-key
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: agent-config
+                  key: llm-model
+            - name: GRAPH_ENV
+              value: "prod"
+            - name: OTEL_TRACE_ENABLE
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4318/v1/traces"
+            - name: LANGFUSE_ENABLED
+              value: "true"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: desktop-agent-api
+spec:
+  selector:
+    app: desktop-agent
+    component: api
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: desktop-agent-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: desktop-agent-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+data:
+  llm-base-url: "http://vllm-service:8001/v1"
+  llm-model: "qwen2.5-7b-instruct"
+  graph-env: "prod"
+  otel-trace-enable: "true"

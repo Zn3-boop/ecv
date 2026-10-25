@@ -1,0 +1,48 @@
+# SGLang PD分离部署配置
+# 适用于Agent长输入短输出场景（9K token输入、200 token输出）
+# Prefill和Decode拆到独立资源池，KV Cache通过RDMA传输
+
+# ===== Prefill Worker 配置 =====
+prefill:
+  model: "Qwen/Qwen2.5-7B-Instruct"
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.95
+  max_num_seqs: 64
+  # Prefill是计算密集型，用算力强的卡
+  # 推荐GPU: H100 / A100
+  port: 8001
+  num_workers: 1
+
+# ===== Decode Worker 配置 =====
+decode:
+  model: "Qwen/Qwen2.5-7B-Instruct"
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.90
+  max_num_seqs: 256
+  # Decode是带宽密集型，用带宽大的卡
+  # 推荐GPU: H20 / A100
+  port: 8002
+  num_workers: 2
+
+# ===== Router 配置 =====
+router:
+  host: "0.0.0.0"
+  port: 8000
+  # KV-aware路由：选择已有最多KV Cache重叠的prefill worker
+  policy: "kv_aware"
+  # 负载均衡策略
+  load_balance: "round_robin"
+
+# ===== KV Cache 传输 =====
+kv_transfer:
+  # Mooncake/NIXL传输引擎
+  engine: "mooncake"
+  # RDMA传输（需要InfiniBand或RoCE网络）
+  rdma: true
+  # 传输超时
+  timeout_ms: 500
+
+# ===== 何时不上PD分离 =====
+# 负载输入输出比均衡（如对话型ChatBot）时，PD分离的KV传输开销是净损耗
+# 判断标准：压测看prefill和decode哪个是瓶颈
+# 如果decode不是瓶颈，不要上PD分离

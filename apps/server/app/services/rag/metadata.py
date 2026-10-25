@@ -3,40 +3,45 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any
 
 
 @dataclass
 class ChunkMeta:
+    """
+    RAG 文档切片的元数据结构。
+
+    被 chunker.py 中 Chunker / ParentChildChunker / SentenceWindowChunker 使用，
+    要求：
+    1. 支持初始化后赋值（ParentChildChunker 会设置 parent_meta.is_parent = True）
+    2. 提供 to_dict() / from_dict() 序列化
+    """
+
     chunk_id: str
-    doc_id: str
-    doc_title: str
-    section_path: list[str]
-    chunk_index: int
-    version: int
-    created_at: float
-    updated_at: float
-    source_type: str
-    acl_tags: list[str]
-    source_url: str
-    checksum: str
+    doc_id: str = ""
+    doc_title: str = ""
+    section_path: list[str] = field(default_factory=list)
+    chunk_index: int = 0
+    version: int = 1
+    created_at: float = 0.0
+    updated_at: float = 0.0
+    source_type: str = "text"
+    acl_tags: list[str] = field(default_factory=lambda: ["public"])
+    source_url: str = ""
+    checksum: str = ""
+    char_count: int = 0
+    content_hash: str = ""
+
+    is_parent: bool = False
+    child_count: int = 0
+    parent_id: str = ""
+    parent_chunk_index: int = -1
+
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "chunk_id": self.chunk_id,
-            "doc_id": self.doc_id,
-            "doc_title": self.doc_title,
-            "section_path": self.section_path,
-            "chunk_index": self.chunk_index,
-            "version": self.version,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "source_type": self.source_type,
-            "acl_tags": self.acl_tags,
-            "source_url": self.source_url,
-            "checksum": self.checksum,
-        }
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ChunkMeta:
@@ -44,9 +49,10 @@ class ChunkMeta:
 
 
 def make_chunk_meta(
+    *,
     content: str,
-    doc_id: str = "",
-    doc_title: str = "",
+    doc_id: str,
+    doc_title: str,
     section_path: list[str] | None = None,
     chunk_index: int = 0,
     version: int = 1,
@@ -55,18 +61,26 @@ def make_chunk_meta(
     source_url: str = "",
 ) -> ChunkMeta:
     now = time.time()
-    checksum = hashlib.md5(content.encode("utf-8")).hexdigest()[:12]
+    text = content or ""
+    try:
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
+    except Exception:
+        digest = uuid.uuid4().hex[:10]
+
+    doc_part = (doc_id or "doc").replace(" ", "_")
     return ChunkMeta(
-        chunk_id=f"chk_{uuid.uuid4().hex[:12]}",
-        doc_id=doc_id or f"doc_{uuid.uuid4().hex[:8]}",
+        chunk_id=f"{doc_part}_c{chunk_index}_{digest}",
+        doc_id=doc_id,
         doc_title=doc_title,
-        section_path=section_path or [],
+        section_path=list(section_path or []),
         chunk_index=chunk_index,
         version=version,
         created_at=now,
         updated_at=now,
         source_type=source_type,
-        acl_tags=acl_tags or ["public"],
+        acl_tags=list(acl_tags) if acl_tags else ["public"],
         source_url=source_url,
-        checksum=checksum,
+        checksum=hashlib.md5(text.encode("utf-8")).hexdigest()[:12],
+        char_count=len(text),
+        content_hash=digest,
     )

@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  labels:
+    grafana_dashboard: "1"
+data:
+  agent-overview.json: |
+    {
+      "dashboard": {
+        "title": "Agent Production Overview",
+        "panels": [
+          {
+            "title": "LLM Call Rate",
+            "type": "timeseries",
+            "targets": [{"expr": "rate(llm_call_total[5m])"}],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "title": "LLM Latency P50/P95/P99",
+            "type": "timeseries",
+            "targets": [
+              {"expr": "histogram_quantile(0.50, rate(graph_node_duration_seconds_bucket{node=\"llm_call\"}[5m]))", "legendFormat": "P50"},
+              {"expr": "histogram_quantile(0.95, rate(graph_node_duration_seconds_bucket{node=\"llm_call\"}[5m]))", "legendFormat": "P95"},
+              {"expr": "histogram_quantile(0.99, rate(graph_node_duration_seconds_bucket{node=\"llm_call\"}[5m]))", "legendFormat": "P99"}
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "title": "Tool Failure Rate",
+            "type": "gauge",
+            "targets": [{"expr": "rate(graph_tool_failure_total[5m]) / rate(graph_tool_call_total[5m])"}],
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8}
+          },
+          {
+            "title": "LLM Retry Rate",
+            "type": "gauge",
+            "targets": [{"expr": "rate(llm_retry_total[5m]) / rate(llm_call_total[5m])"}],
+            "gridPos": {"h": 4, "w": 6, "x": 6, "y": 8}
+          },
+          {
+            "title": "Session Cost",
+            "type": "stat",
+            "targets": [{"expr": "sum(agent_session_cost_usd)"}],
+            "gridPos": {"h": 4, "w": 6, "x": 12, "y": 8}
+          },
+          {
+            "title": "Correction Loop Triggered",
+            "type": "timeseries",
+            "targets": [{"expr": "rate(graph_correction_trigger_total[5m])"}],
+            "gridPos": {"h": 4, "w": 6, "x": 18, "y3": 8}
+          }
+        ]
+      }
+    }

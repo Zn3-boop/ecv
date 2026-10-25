@@ -44,8 +44,14 @@ export function FilesPanel({ getDesktopAPI }: FilesPanelProps) {
   }, [getDesktopAPI])
 
   // 删除文件
+  const [deleteConfirm, setDeleteConfirm] = useState<FileEntry | null>(null)
+
   const handleDelete = async (entry: FileEntry) => {
-    if (!window.confirm(`确定删除 ${entry.name}？`)) return
+    if (!deleteConfirm || deleteConfirm.path !== entry.path) {
+      setDeleteConfirm(entry)
+      return
+    }
+    setDeleteConfirm(null)
     const api = getDesktopAPI()
     if (api?.deletePath) {
       try {
@@ -303,7 +309,7 @@ export function FilesPanel({ getDesktopAPI }: FilesPanelProps) {
                   <button
                     onClick={() => handleDelete(entry)}
                     style={{
-                      background: 'rgba(239,68,68,0.15)',
+                      background: deleteConfirm?.path === entry.path ? '#ef4444' : 'rgba(239,68,68,0.15)',
                       color: '#ef4444',
                       border: 'none',
                       borderRadius: '6px',
@@ -312,7 +318,7 @@ export function FilesPanel({ getDesktopAPI }: FilesPanelProps) {
                       cursor: 'pointer',
                     }}
                   >
-                    删除
+                    {deleteConfirm?.path === entry.path ? '确认?' : '删除'}
                   </button>
                 </div>
               </div>

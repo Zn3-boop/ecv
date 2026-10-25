@@ -6,6 +6,8 @@ interface TopBarProps {
   voiceStatusText?: string
   metrics?: SystemMetrics | null
   error?: string
+  isMuted?: boolean
+  onToggleMute?: () => void
   onOpenConfig?: () => void
   onOpenWindowSettings?: () => void
 }
@@ -16,6 +18,8 @@ export function TopBar({
   voiceStatusText,
   metrics,
   error,
+  isMuted,
+  onToggleMute,
   onOpenConfig,
   onOpenWindowSettings,
 }: TopBarProps) {
@@ -70,6 +74,21 @@ export function TopBar({
             ⚠️ {error}
           </span>
         )}
+        <button
+          onClick={onToggleMute}
+          title={isMuted ? '取消静音' : '静音'}
+          style={{
+            background: 'transparent',
+            border: `1px solid ${isMuted ? '#ef4444' : '#334155'}`,
+            color: isMuted ? '#ef4444' : '#94a3b8',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          {isMuted ? '🔇' : '🔊'}
+        </button>
         <button
           onClick={onOpenConfig}
           style={{

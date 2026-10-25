@@ -5,6 +5,7 @@ import {
   WindowSettingsModal,
 } from './components'
 import type { BadgeCounts } from './types'
+import type { ToastItem } from './hooks/useAppContext'
 
 export default function App() {
   const {
@@ -32,6 +33,10 @@ export default function App() {
     handlePause,
     handleResume,
     setApiBase,
+    isMuted,
+    setIsMuted,
+    toasts,
+    removeToast,
   } = useApp()
   
   const [showWindowSettings, setShowWindowSettings] = useState(false)
@@ -57,6 +62,8 @@ export default function App() {
         voiceStatusText={cloudAudioStatus}
         metrics={metrics}
         error={error}
+        isMuted={isMuted}
+        onToggleMute={() => setIsMuted(!isMuted)}
         onOpenConfig={() => setShowConfig(true)}
         onOpenWindowSettings={() => setShowWindowSettings(true)}
       />
@@ -79,6 +86,7 @@ export default function App() {
               executionResults={executionResults}
               onAnalyzeProblem={handleAnalyzeProblem}
               agentAnalysis={agentAnalysis}
+              addToast={addToast}
             />
           )}
           {activeView === 'conversation' && (
@@ -120,6 +128,34 @@ export default function App() {
         visible={showWindowSettings}
         onClose={() => setShowWindowSettings(false)}
       />
+
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+    </div>
+  )
+}
+
+function ToastContainer({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: string) => void }) {
+  if (toasts.length === 0) return null
+  const colorMap = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' }
+  const iconMap = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' }
+  return (
+    <div style={{
+      position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999,
+      display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '400px',
+    }}>
+      {toasts.map(t => (
+        <div key={t.id} onClick={() => onDismiss(t.id)} style={{
+          background: '#1e293b', border: `1px solid ${colorMap[t.type]}55`,
+          borderRadius: '10px', padding: '12px 16px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          animation: 'slideIn 0.2s ease-out',
+        }}>
+          <span style={{ fontSize: '16px' }}>{iconMap[t.type]}</span>
+          <span style={{ color: '#f8fafc', fontSize: '13px', flex: 1 }}>{t.message}</span>
+          <span style={{ color: '#64748b', fontSize: '11px', cursor: 'pointer' }}>✕</span>
+        </div>
+      ))}
     </div>
   )
 }

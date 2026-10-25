@@ -32,3 +32,53 @@ groups:
         annotations:
           summary: "安全拦截事件告警"
           description: "检测到安全拦截事件，请排查注入或高危脚本攻击"
+
+  - name: agent_production_alerts
+    rules:
+      - alert: AgentTaskCostOverBaseline
+        expr: agent_session_cost_ratio > 2.0
+        for: 0m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "单任务成本超过基线2倍"
+          description: |
+            Agent会话token成本超过基线2倍，ratio={{ $value }}。
+            典型原因：Agent跑飞/无限循环/工具滥用。建议熔断该会话并排查。
+
+      - alert: AgentToolFailureRateHigh
+        expr: rate(graph_tool_failure_total[5m]) / rate(graph_tool_call_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "工具调用失败率超过5%"
+          description: |
+            5分钟内工具调用失败率超过5%，当前={{ $value | humanizePercentage }}。
+            可能原因：工具集成bug、Agent滥用工具、上游服务不可用。
+
+      - alert: AgentLLMLatencyP99High
+        expr: histogram_quantile(0.99, rate(graph_node_duration_seconds_bucket{node="llm_call"}[5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "LLM调用P99延迟超过10秒"
+          description: |
+            LLM调用P99延迟超过10秒，当前={{ $value }}s。
+            Agent端到端SLA取决于最慢的LLM调用。检查上游推理服务负载和prefill瓶颈。
+
+      - alert: AgentLLMRetryRateHigh
+        expr: rate(llm_retry_total[5m]) / rate(llm_call_total[5m]) > 0.3
+        for: 2m
+        labels:
+          severity: warning
+          service: desktop-agent
+        annotations:
+          summary: "LLM重试率超过30%"
+          description: |
+            LLM重试率过高，当前={{ $value | humanizePercentage }}。
+            频繁重试往往指向prompt质量问题或上游限流，需排查根因。
