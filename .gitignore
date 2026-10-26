@@ -94,3 +94,7 @@ jev_lite/
 # Runtime SQLite DB (local test data)
 apps/server/data/agent.db
 
+
+# Project docs (kept local only, not uploaded)
+docs/
+
